@@ -1,0 +1,23 @@
+# Virtual environment
+oracle-forge-env/
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# Environment secrets
+.env
+*.env
+
+# Database files (too large for git)
+*.db
+*.duckdb
+DataAgentBench/
+
+# Logs
+*.log
+logs/
+*.jsonl
+
+# OS
+.DS_Store
