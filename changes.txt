@@ -1,0 +1,59 @@
+claude_code_memory.md — replaced with proper injectable document
+
+Source: TRP1 Challenge doc, "What to Study" table:
+
+"Claude Code source leak (March 2026) — Three-layer MEMORY.md architecture (index → topic files → session transcripts), autoDream memory consolidation pattern, tool scoping philosophy"
+
+Source: TRP1 Practitioner Manual, KB structure section:
+
+"kb/architecture/: Claude Code three-layer memory system (MEMORY.md as index, topic files on demand, session transcripts searchable). autoDream consolidation pattern. Tool scoping philosophy. Each document: maximum 400 words, written as 'here is how this works,' verified by injection test."
+
+The old document was a 200+ line source-code analysis — it violated the 400-word max and the "here is how this works" format requirement explicitly stated in the manual.
+
+AGENT.md — added missing load rules and architecture entries
+
+Source: TRP1 Practitioner Manual, KB quality criteria:
+
+"Injected, not summarised — Can you paste the document directly into a context window and get correct answers without additional explanation?"
+
+An index file that doesn't list all available documents means the agent can never load those documents. ddb_failure_modes.md and autodream_consolidation.md existed but were invisible to the agent at session start.
+
+openai_data_agent_context.md — removed broken query_patterns.md reference
+
+Source: TRP1 Practitioner Manual, KB quality criteria:
+
+"Maintained, not archived — Does the KB have a CHANGELOG.md? Are outdated entries removed when the database or agent changes? Growth without removal = noise."
+
+A reference to a file that doesn't exist is worse than noise — it's an active failure point. The agent would attempt to load a non-existent file and either error or silently skip it.
+
+MEMORY.md — health count corrected, new entry added
+
+Source: TRP1 Challenge doc, Intelligence Officer deliverables table:
+
+"LLM Knowledge Base v1, v2, v3 with changelogs and injection test evidence"
+
+The health status table is the evidence record. A wrong count means the evidence doesn't match reality — which is exactly what the facilitator checks at the interim submission on April 14.
+
+agent_probing_strategy.md — new document, fourth required study source
+
+Source: TRP1 Challenge doc, "What to Study" table — this is the most direct one:
+
+"AI Agent Internals Strategy (this package) — Five probe types for exposing how any AI agent handles context, the comparative interrogation method, capability matrix template for documenting findings from probing Claude/ChatGPT/Gemini | AI_Agent_Internals_Strategy.md in this challenge package"
+
+Source: TRP1 Challenge doc, Intelligence Officer deliverables:
+
+"Intelligence Officers should have the key findings from all four areas in the Knowledge Base before Drivers write their first line of agent code."
+
+Three of the four sources were in the KB. The probing strategy was the only one missing — and it's explicitly listed as a required source in the challenge.
+
+Architecture CHANGELOG updated
+
+Source: TRP1 Practitioner Manual, KB quality criteria:
+
+"Maintained, not archived — Does the KB have a CHANGELOG.md? Are outdated entries removed when the database or agent changes?"
+
+Source: TRP1 Challenge doc, interim submission checklist item 3:
+
+"kb/ directory — Four subdirectories (architecture, domain, evaluation, corrections), each with a CHANGELOG.md and evidence of injection tests (test queries and expected answers used to verify each document)."
+
+The CHANGELOG is not optional — it's a graded deliverable checked at the April 14 interim submission.

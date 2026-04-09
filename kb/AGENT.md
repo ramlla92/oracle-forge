@@ -20,7 +20,7 @@
 
 | File | When to load |
 |---|---|
-| kb/domain/join_key_glossary.md | Any query joining data across two databases |
+| kb/domain/join_keys_glossary.md | Any query joining data across two databases |
 
 ---
 
@@ -36,7 +36,15 @@
 
 | File | When to load |
 |---|---|
-| kb/domain/unstructured_fields.md | Query requires extracting values from free-text fields |
+| kb/domain/unstructured_fields_inventory.md | Query requires extracting values from free-text fields |
+
+---
+
+## Load When Query Involves DuckDB
+
+| File | When to load |
+|---|---|
+| kb/architecture/ddb_failure_modes.md | Any query routing to DuckDB or involving analytical SQL |
 
 ---
 
@@ -53,9 +61,11 @@
 
 | File | What it contains |
 |---|---|
-| kb/architecture/claude_code_memory.md | Three-layer memory system, autoDream pattern |
+| kb/architecture/claude_code_memory.md | Three-layer memory system, Oracle Forge mapping |
 | kb/architecture/openai_data_agent_context.md | Six-layer context, table enrichment, self-learning loop |
-| kb/architecture/tool_scoping_and_parallelism.md | Parallel execution rules, MCP Toolbox pattern |
+| kb/architecture/tool_scoping_and_parallelism.md | Parallel execution rules, MCP Toolbox pattern, minimum tool set |
+| kb/architecture/autodream_consolidation.md | When and how to consolidate session transcripts into KB entries |
+| kb/architecture/agent_probing_strategy.md | Five probe types for adversarial probe library design; probe-to-failure-category mapping |
 
 ---
 

@@ -69,8 +69,8 @@ Join key format mappings across databases.
 Patterns discovered through trial and error, documented so they are not rediscovered.
 
 Oracle Forge equivalent:
-- kb/domain/join_key_glossary.md → join key format mismatches
-- kb/domain/query_patterns.md → known working patterns per dataset
+- kb/domain/join_keys_glossary.md → join key format mismatches
+- kb/corrections/corrections_log.md → successful patterns discovered through trial and error
 
 ---
 
@@ -86,7 +86,11 @@ Format: [query that failed] → [what was wrong] → [correct approach] → [fix
 
 ---
 
-## Layer 6: Self-Learning Loop (Closed-Loop Self-Correction)
+## Layer 6: Retrieved Examples (Closed-Loop Self-Correction)
+
+At query time, semantically similar past queries with their confirmed correct answers are
+injected. The agent sees "here is how a similar question was answered before."
+This is the self-learning loop — the agent improves from its own history without retraining.
 
 The mechanism that makes the agent improve without retraining.
 
@@ -111,6 +115,18 @@ Oracle Forge implementation:
 
 ---
 
+## Minimum Requirement for Oracle Forge
+
+The challenge requires three demonstrably working layers minimum:
+- Layer 1 (schema/metadata) → kb/domain/schema_overview.md + kb/domain/yelp_schema.md
+- Layer 3 (institutional knowledge) → kb/domain/domain_terms.md
+- Layer 5 (interaction memory) → kb/corrections/corrections_log.md
+
+All six layers are the target. Layers 1, 2, 3, 4, 5 can be implemented before the benchmark.
+Layer 6 (retrieved examples) improves score between Week 8 baseline and Week 9 submission.
+
+---
+
 ## Why This Architecture Beats Raw LLM Capability
 
 Gemini 3 Pro (best frontier model) scores 38% pass@1 on DAB with no context engineering.
@@ -118,5 +134,3 @@ PromptQL (specialized data agent with semantic layer) scores 51% pass@1 on same 
 The 13 percentage point gap comes entirely from context engineering, not model capability.
 
 Our target: exceed 38% by applying all six layers to DAB's 12 datasets.
-The layers we can implement before the benchmark: 1, 2, 3, 4, 5.
-Layer 6 (self-learning) improves our score between Week 8 baseline and Week 9 submission.

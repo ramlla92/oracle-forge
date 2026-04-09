@@ -81,6 +81,24 @@ the agent works with logical tool names, not implementation details.
 
 ---
 
+## Minimum Tool Set for Oracle Forge tools.yaml
+
+Each database type must have its own distinct tool — never a shared generic query tool.
+This prevents DAB Failure Category 1 (multi-database routing failure).
+
+- `postgres_query` — executes SQL against PostgreSQL databases; returns rows as JSON
+- `mongo_aggregate` — executes MongoDB aggregation pipelines; returns documents as JSON
+- `sqlite_query` — executes SQL against SQLite databases; returns rows as JSON
+- `duckdb_query` — executes analytical SQL against DuckDB; returns columnar result as JSON
+- `cross_db_merge` — merges result sets from two database tools on a specified key after format resolution
+
+**Tool description quality test.** For each tool in `tools.yaml`, ask: if the agent reads only
+this description, will it call this tool and not another for its intended query type?
+If the answer is "maybe," the description is too vague. Rewrite it until the answer is
+"yes, unambiguously."
+
+---
+
 ## Sub-Agent Spawn Modes (from Claude Code)
 
 Relevant for understanding how the Conductor/worktree pattern works:
@@ -108,13 +126,13 @@ Does it require data from multiple databases?
     NO  → query single database directly
     ↓
 Does it require text extraction from unstructured fields?
-    YES → check unstructured_fields.md for extraction method
+    YES → check unstructured_fields_inventory.md for extraction method
           data-independent → use regex pattern from KB
           data-dependent   → use LLM extraction via execute_python
     NO  → proceed with SQL/MongoDB query result directly
     ↓
 Does it require cross-database join?
-    YES → check join_key_glossary.md for key format
+    YES → check join_keys_glossary.md for key format
           normalize keys using join_key_resolver.py
           merge in execute_python
     NO  → return query result directly

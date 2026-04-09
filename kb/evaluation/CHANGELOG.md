@@ -13,7 +13,7 @@ Reviewed at: every mob session
 
 | Date | Document | Change Type | What Changed | Reason |
 |------|----------|-------------|--------------|--------|
-| 2026-04-08 | `dab_eval.md` | ADDED | Initial document created. Covers 54-query set, pass@1 definition, 5-trial minimum, run_benchmark.py interface, GitHub PR submission format, internal harness requirement. | Required KB v1 deliverable. Must exist before any evaluation run. |
+| 2026-04-08 | `dab_read.md` | ADDED | Initial document created. Covers 54-query set, pass@1 definition, 5-trial minimum, run_benchmark.py interface, GitHub PR submission format, internal harness requirement. | Required KB v1 deliverable. Must exist before any evaluation run. |
 | 2026-04-08 | `ddb_read.md` | ADDED | Initial document created. Covers DuckDB-specific evaluation notes: routing plan requirement, query trace format, pre-aggregated table pitfall, ±0.01 float tolerance, result ordering requirement. | DuckDB is one of four DAB database types. Evaluation behaviour differs from PostgreSQL. |
 | 2026-04-08 | `scoring_method.md` | ADDED | Initial document created. Maps all four DAB failure categories to probe design rules, query trace signals that confirm failure, and fix directions. | Required KB v1 deliverable. Needed before adversarial probe library is run against the agent. |
 

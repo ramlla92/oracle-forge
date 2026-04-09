@@ -29,12 +29,13 @@ injection test before being committed.
 | File | What it answers | Load when |
 |------|----------------|-----------|
 | `kb/architecture/claude_code_memory.md` | How Claude Code's three-layer memory system works (MEMORY.md → topic files → session transcripts) | Setting up agent memory architecture |
-| `kb/architecture/openai_context_layers.md` | OpenAI data agent's six context layers; which three are mandatory for Oracle Forge | Designing context injection strategy |
+| `kb/architecture/openai_data_agent_context.md` | OpenAI data agent's six context layers; which three are mandatory for Oracle Forge | Designing context injection strategy |
 | `kb/architecture/autodream_consolidation.md` | When and how to consolidate session transcripts into KB entries | End of every mob session |
-| `kb/architecture/tool_scoping.md` | Why narrow tool scoping prevents routing failures; how to write tool descriptions in tools.yaml | Configuring MCP tools.yaml |
+| `kb/architecture/tool_scoping_and_parallelism.md` | Why narrow tool scoping prevents routing failures; minimum tool set for tools.yaml; parallel execution rules | Configuring MCP tools.yaml |
 | `kb/architecture/self_correction_loop.md` | Four-step loop: execute → diagnose → recover → log | Agent returns zero rows or an error |
 | `kb/architecture/dab_failure_modes.md` | All four DAB failure categories with detection signals and fix directions | Diagnosing any agent failure |
 | `kb/architecture/ddb_failure_modes.md` | DuckDB-specific failures: wrong DB routed, dialect mismatch, schema mismatch, wrong MCP tool | Any query involving DuckDB |
+| `kb/architecture/agent_probing_strategy.md` | Five probe types; probe-to-failure-category mapping for adversarial probe library design | Designing or reviewing probes/probes.md |
 
 ---
 
@@ -55,7 +56,7 @@ injection test before being committed.
 
 | File | What it answers | Load when |
 |------|----------------|-----------|
-| `kb/evaluation/dab_eval.md` | pass@1 definition, 5-trial minimum, 54-query set, GitHub PR submission format | Before any evaluation run |
+| `kb/evaluation/dab_read.md` | pass@1 definition, 5-trial minimum, 54-query set, GitHub PR submission format | Before any evaluation run |
 | `kb/evaluation/ddb_read.md` | DuckDB-specific evaluation: routing requirement, float tolerance ±0.01, result ordering | Any evaluation query involving DuckDB |
 | `kb/evaluation/scoring_method.md` | Failure category → probe design rules → query trace signals → fix directions | Diagnosing why score is not improving |
 
@@ -90,7 +91,7 @@ the relevant documents are loaded:
 
 | Subdirectory | Documents | Last injection test | Status |
 |-------------|-----------|--------------------| -------|
-| architecture | 7 | 2026-04-08 | ✅ All passing |
+| architecture | 8 | 2026-04-09 | ✅ All passing |
 | domain | 4 | 2026-04-08 | ✅ All passing |
 | evaluation | 3 | 2026-04-08 | ✅ All passing |
 | corrections | 1 | 2026-04-08 | ✅ Active |
