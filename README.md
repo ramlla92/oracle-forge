@@ -5,9 +5,9 @@
 ## Team
 | Name | Role |
 |------|------|
+| Natnael Alemseged | Driver |
 | Yakob Dereje | Driver |
-| Mamaru Yirga | Driver |
-| Natnael Alemseged | Intelligence Officer |
+| Mamaru Yirga |  Intelligence Officer  |
 | Ramlla Akmel | Intelligence Officer |
 | Melaku Yilma | Signal Corps |
 | Rahel Samson | Signal Corps |
