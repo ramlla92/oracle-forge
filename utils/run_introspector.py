@@ -42,13 +42,6 @@ lines.append(f"**Datasets:** {', '.join(c['name'] for c in connections)}\n")
 lines.append("---\n")
 lines.append(format_for_kb(result))
 
-if result["join_key_hints"]:
-    lines.append("\n## Join Key Mismatch Hints")
-    lines.append("\nThe following fields share names across databases but have incompatible types or formats.")
-    lines.append("These require normalisation before any cross-database join.\n")
-    for hint in result["join_key_hints"]:
-        lines.append(f"- {hint}")
-
 lines.append("\n---")
 lines.append("\n*Share this file with Intelligence Officers to update kb/domain/yelp_schema.md*")
 

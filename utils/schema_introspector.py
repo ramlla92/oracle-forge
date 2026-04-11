@@ -127,7 +127,8 @@ def format_for_kb(introspection_result: dict) -> str:
             lines.append("| Column | Type | Sample Values |")
             lines.append("|--------|------|---------------|")
             for col in table.get("columns", []):
-                samples = ", ".join(str(v) for v in col.get("sample_values", []))
+                raw_samples = ", ".join(str(v) for v in col.get("sample_values", []))
+                samples = raw_samples[:120] + "..." if len(raw_samples) > 120 else raw_samples
                 lines.append(f"| {col['name']} | {col['type']} | {samples} |")
             lines.append("")
 
