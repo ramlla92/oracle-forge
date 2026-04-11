@@ -152,10 +152,10 @@ class AgentCore:
             json.dump(log_entry, f, indent=2)
 
 
+_MARKDOWN_FENCE = re.compile(r"```(?:json)?\s*([\s\S]*?)```")
+
+
 def _strip_markdown(text: str) -> str:
-    """Remove ```json ... ``` or ``` ... ``` wrappers from LLM response."""
     text = text.strip()
-    match = re.search(r"```(?:json)?\s*([\s\S]*?)```", text)
-    if match:
-        return match.group(1).strip()
-    return text
+    match = _MARKDOWN_FENCE.search(text)
+    return match.group(1).strip() if match else text

@@ -14,25 +14,18 @@ Usage:
     source .venv/bin/activate
     source .env
     uvicorn mcp.mcp_server:app --port 5000
-
-Tools implemented:
-  - postgres_query    : SQL against PostgreSQL Yelp DB
-  - mongo_aggregate   : MongoDB aggregation pipeline
-  - mongo_find        : MongoDB find with filter + projection
-  - sqlite_query      : SQL against DAB SQLite DB
-  - duckdb_query      : Analytical SQL against DAB DuckDB DB
-  - cross_db_merge    : In-process merge of two result sets
 """
 
+import asyncio
 import json
 import os
 import sqlite3
-import sys
-from typing import Any
+from typing import Any, Optional
 
 import duckdb
 import psycopg2
 import psycopg2.extras
+from bson import ObjectId
 from fastapi import FastAPI, HTTPException, Path
 from fastapi.responses import JSONResponse
 from pymongo import MongoClient
@@ -52,6 +45,9 @@ MONGO_DB   = "yelp_db"
 
 SQLITE_PATH = os.getenv("SQLITE_PATH", "db/dab_sqlite.db")
 DUCKDB_PATH = os.getenv("DUCKDB_PATH", "db/yelp_user.db")
+
+# Module-level MongoDB client — connection pool shared across all requests
+_mongo_client: Optional[MongoClient] = None
 
 # ---------------------------------------------------------------------------
 app = FastAPI(title="Oracle Forge MCP Server", version="1.0.0")
@@ -104,17 +100,28 @@ TOOLS = [
 ]
 
 
+def _get_mongo() -> MongoClient:
+    global _mongo_client
+    if _mongo_client is None:
+        _mongo_client = MongoClient(f"mongodb://{MONGO_HOST}:{MONGO_PORT}/")
+    return _mongo_client
+
+
+def _safe_json(value: Any) -> Any:
+    """Return parsed JSON if value is a string, otherwise return as-is."""
+    return json.loads(value) if isinstance(value, str) else value
+
+
 @app.get("/v1/tools")
 def list_tools():
     return {"tools": TOOLS}
 
 
 @app.post("/v1/tools/{tool_name}:invoke")
-async def invoke_tool(tool_name: str = Path(...), body: dict = None):
-    if body is None:
-        body = {}
+async def invoke_tool(tool_name: str = Path(...), body: Optional[dict] = None):
+    params = body or {}
     try:
-        result = _dispatch(tool_name, body)
+        result = await asyncio.to_thread(_dispatch, tool_name, params)
         return {"result": result}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -157,45 +164,28 @@ def _postgres_query(params: dict) -> list[dict]:
     try:
         cur = conn.cursor()
         cur.execute(sql)
-        rows = [dict(r) for r in cur.fetchall()]
-        return rows
+        return [dict(r) for r in cur.fetchall()]
     finally:
         conn.close()
 
 
 def _mongo_aggregate(params: dict) -> list[dict]:
     collection = params.get("collection", "")
-    pipeline_raw = params.get("pipeline", "[]")
     if not collection:
         raise ValueError("Parameter 'collection' is required")
-    pipeline = json.loads(pipeline_raw) if isinstance(pipeline_raw, str) else pipeline_raw
-    client = MongoClient(f"mongodb://{MONGO_HOST}:{MONGO_PORT}/")
-    try:
-        db = client[MONGO_DB]
-        docs = list(db[collection].aggregate(pipeline))
-        # Convert ObjectIds to strings for JSON serialisation
-        return [_serialize_doc(d) for d in docs]
-    finally:
-        client.close()
+    pipeline = _safe_json(params.get("pipeline", "[]"))
+    db = _get_mongo()[MONGO_DB]
+    return [_serialize_doc(d) for d in db[collection].aggregate(pipeline)]
 
 
 def _mongo_find(params: dict) -> list[dict]:
     collection = params.get("collection", "")
-    filter_raw = params.get("filter", "{}")
-    projection_raw = params.get("projection", None)
     if not collection:
         raise ValueError("Parameter 'collection' is required")
-    filter_doc = json.loads(filter_raw) if isinstance(filter_raw, str) else (filter_raw or {})
-    projection = None
-    if projection_raw:
-        projection = json.loads(projection_raw) if isinstance(projection_raw, str) else projection_raw
-    client = MongoClient(f"mongodb://{MONGO_HOST}:{MONGO_PORT}/")
-    try:
-        db = client[MONGO_DB]
-        cursor = db[collection].find(filter_doc, projection)
-        return [_serialize_doc(d) for d in cursor]
-    finally:
-        client.close()
+    filter_doc = _safe_json(params.get("filter", "{}")) or {}
+    projection = _safe_json(params.get("projection")) if params.get("projection") else None
+    db = _get_mongo()[MONGO_DB]
+    return [_serialize_doc(d) for d in db[collection].find(filter_doc, projection)]
 
 
 def _sqlite_query(params: dict) -> list[dict]:
@@ -226,18 +216,14 @@ def _duckdb_query(params: dict) -> list[dict]:
 
 
 def _cross_db_merge(params: dict) -> dict:
-    left_raw  = params.get("left_results", "[]")
-    right_raw = params.get("right_results", "[]")
-    left_key  = params.get("left_key", "")
+    left  = _safe_json(params.get("left_results",  "[]"))
+    right = _safe_json(params.get("right_results", "[]"))
+    left_key  = params.get("left_key",  "")
     right_key = params.get("right_key", "")
-
-    left  = json.loads(left_raw)  if isinstance(left_raw,  str) else left_raw
-    right = json.loads(right_raw) if isinstance(right_raw, str) else right_raw
 
     if not left_key or not right_key:
         raise ValueError("left_key and right_key are required for cross_db_merge")
 
-    # Build lookup from right side
     right_index: dict[str, list] = {}
     for row in right:
         k = str(row.get(right_key, ""))
@@ -245,12 +231,10 @@ def _cross_db_merge(params: dict) -> dict:
 
     merged = []
     for left_row in left:
-        lk = str(left_row.get(left_key, ""))
-        matches = right_index.get(lk, [])
+        matches = right_index.get(str(left_row.get(left_key, "")), [])
         if matches:
             for right_row in matches:
-                combined = {**left_row, **right_row}
-                merged.append(combined)
+                merged.append({**left_row, **right_row})
         else:
             merged.append(left_row)
 
@@ -262,10 +246,9 @@ def _cross_db_merge(params: dict) -> dict:
 # ---------------------------------------------------------------------------
 
 def _serialize_doc(doc: dict) -> dict:
-    """Convert non-JSON-serializable BSON types to strings."""
     out = {}
     for k, v in doc.items():
-        if hasattr(v, "__class__") and v.__class__.__name__ == "ObjectId":
+        if isinstance(v, ObjectId):
             out[k] = str(v)
         elif isinstance(v, dict):
             out[k] = _serialize_doc(v)
