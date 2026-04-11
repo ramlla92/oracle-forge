@@ -48,15 +48,17 @@ class ContextManager:
             return "# Corrections Log\n(No corrections yet)"
 
     def _fit_to_budget(self, text: str, token_budget: int, preserve_start: int = 0) -> str:
-        """Truncate from the middle, always preserving Layer 1 (schema) and the end (recent corrections)."""
+        """Truncate from the middle, preserving Layer 1 (schema) and recent corrections."""
         char_budget = token_budget * 4
         if len(text) <= char_budget:
             return text
         half = char_budget // 2
-        # Keep at least the preserved start block intact
-        keep_start = max(half, preserve_start)
+        keep_start = min(max(half, preserve_start), char_budget)
         keep_end = char_budget - keep_start
-        return text[:keep_start] + "\n...[context truncated to fit token budget]...\n" + text[-keep_end:]
+        if keep_end <= 0:
+            return text[:keep_start] + "\n...[context truncated to fit token budget]..."
+        truncation_msg = "\n...[context truncated to fit token budget]...\n"
+        return text[:keep_start] + truncation_msg + text[-keep_end:]
 
     def get_schema_for_db(self, db_type: str) -> str:
         """Extract the schema section for a specific DB type from AGENT.md."""
@@ -74,9 +76,11 @@ class ContextManager:
         start = content.find(heading)
         if start == -1:
             return content
-        # Find the next top-level heading (##) after our section
-        next_heading = content.find("\n## ", start + 1)
-        end = next_heading if next_heading != -1 else len(content)
+        # Find the next sibling (###) or parent (##) heading after our section
+        next_h3 = content.find("\n### ", start + len(heading))
+        next_h2 = content.find("\n## ", start + 1)
+        candidates = [p for p in (next_h3, next_h2) if p != -1]
+        end = min(candidates) if candidates else len(content)
         return content[start:end].strip()
 
     def add_to_session(self, query: str, result_summary: str, correction: Optional[str] = None):
@@ -99,7 +103,8 @@ class ContextManager:
         """Write a new correction table row immediately (never batch).
 
         Matches the format defined in kb/corrections/corrections_log.md:
-        | ID | Date | Query | Failure Category | What Was Expected | What Agent Returned | Fix Applied | Post-Fix Score |
+        | ID | Date | Query | Failure Category | What Was Expected
+        | What Agent Returned | Fix Applied | Post-Fix Score |
         """
         entry_id = self._next_entry_id()
         date = str(datetime.utcnow().date())
@@ -120,7 +125,7 @@ class ContextManager:
         try:
             with open(self.corrections_path) as f:
                 content = f.read()
-            existing = [l for l in content.splitlines() if l.startswith("| COR-")]
+            existing = [line for line in content.splitlines() if line.startswith("| COR-")]
             return f"COR-{str(len(existing) + 1).zfill(3)}"
         except FileNotFoundError:
             return "COR-001"

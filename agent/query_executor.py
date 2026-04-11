@@ -1,5 +1,7 @@
 import json
+
 import httpx
+
 from agent.models import SubQuery
 
 MCP_BASE_URL = "http://localhost:5000"
@@ -76,7 +78,8 @@ class QueryExecutor:
             except (json.JSONDecodeError, IndexError):
                 pipeline = sub_query.query
                 collection = "business"
-            return {"collection": collection, "pipeline": json.dumps(pipeline)}
+            serialized = pipeline if isinstance(pipeline, str) else json.dumps(pipeline)
+            return {"collection": collection, "pipeline": serialized}
 
         return {"sql": sub_query.query}
 

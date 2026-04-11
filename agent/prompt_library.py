@@ -123,7 +123,7 @@ Return only valid JSON."""
     def _dialect_rules(self, dialect: str) -> str:
         rules = {
             "postgresql": "use ILIKE for case-insensitive search, LIMIT for pagination",
-            "sqlite": "use LIKE for search, no ILIKE, use strftime for dates",
+            "sqlite": "use LIKE for search, use strftime for dates",
             "duckdb": "use DuckDB analytical functions, SAMPLE for large datasets",
             "mongodb": "return a MongoDB aggregation pipeline as a JSON array",
         }

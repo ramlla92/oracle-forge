@@ -1,6 +1,5 @@
 from agent.models import SubQuery
 
-
 # Maps dataset names to their DB type assignments (from DAB db_config.yaml files)
 DATASET_DB_MAP = {
     "yelp":          {"businessinfo_database": "mongodb", "user_database": "duckdb"},
@@ -20,8 +19,8 @@ DATASET_DB_MAP = {
 
 # Keywords that signal which DB type a question targets
 DB_TYPE_SIGNALS = {
-    "mongodb":    ["business", "checkin", "attributes", "hours", "description", "articles", "support"],
-    "duckdb":     ["review", "tip", "user", "rating", "trade", "sales", "molecular", "project", "artifacts"],
+    "mongodb": ["business", "checkin", "attributes", "hours", "description", "articles", "support"],
+    "duckdb": ["review", "tip", "user", "rating", "trade", "sales", "molecular", "project"],
     "postgresql": ["books", "crm", "googlelocal", "clinical", "patent", "CPCDefinition"],
     "sqlite":     ["metadata", "package", "tracks", "stockinfo", "indexinfo", "territory"],
 }

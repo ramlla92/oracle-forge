@@ -3,12 +3,12 @@ import os
 import re
 from datetime import datetime
 
-from agent.models import QueryRequest, AgentResponse, QueryTrace, SubQuery
-from agent.prompt_library import PromptLibrary
-from agent.context_manager import ContextManager
-from agent.self_corrector import SelfCorrector
-from agent.query_executor import QueryExecutor
 from agent import llm_client
+from agent.context_manager import ContextManager
+from agent.models import AgentResponse, QueryRequest, QueryTrace, SubQuery
+from agent.prompt_library import PromptLibrary
+from agent.query_executor import QueryExecutor
+from agent.self_corrector import SelfCorrector
 
 
 class AgentCore:
@@ -23,7 +23,8 @@ class AgentCore:
     def analyze_intent(self, question: str, available_databases: list[str]) -> dict:
         """Call LLM to identify which DBs to query and extract structured intent.
 
-        Returns: {"target_databases": [...], "intent_summary": str, "requires_join": bool, "data_fields_needed": [...]}
+        Returns: {"target_databases": [...], "intent_summary": str,
+                  "requires_join": bool, "data_fields_needed": [...]}
         """
         system_context = self.ctx.get_full_context()
         prompt = self.prompts.intent_analysis(question, available_databases)
@@ -79,7 +80,9 @@ class AgentCore:
             business_refs = _extract_business_refs(mongo_result)
             if business_refs:
                 try:
-                    new_query = self._generate_duckdb_with_refs(request.question, intent, business_refs)
+                    new_query = self._generate_duckdb_with_refs(
+                        request.question, intent, business_refs
+                    )
                     duck_sq = SubQuery(
                         database_type="duckdb",
                         query=new_query,
@@ -156,7 +159,9 @@ class AgentCore:
 
         return {"error": "max retries exceeded"}, corrections
 
-    def _generate_duckdb_with_refs(self, question: str, intent: dict, business_refs: list[str]) -> str:
+    def _generate_duckdb_with_refs(
+        self, question: str, intent: dict, business_refs: list[str]
+    ) -> str:
         """Generate a DuckDB query pre-filtered to specific business_refs from MongoDB results."""
         refs_sql = ", ".join(f"'{r}'" for r in business_refs)
         schema = self.ctx.get_schema_for_db("duckdb")
@@ -221,7 +226,7 @@ def _looks_like_query(text: str, db_type: str) -> bool:
 
 
 def _extract_business_refs(mongo_result) -> list[str]:
-    """Convert MongoDB business_id values to DuckDB business_ref format (businessid_N → businessref_N)."""
+    """Convert MongoDB business_id values to DuckDB business_ref format."""
     docs = mongo_result if isinstance(mongo_result, list) else mongo_result.get("rows", [])
     refs = []
     for doc in docs:
@@ -232,7 +237,3 @@ def _extract_business_refs(mongo_result) -> list[str]:
     return refs
 
 
-def _strip_markdown(text: str) -> str:
-    text = text.strip()
-    match = _MARKDOWN_FENCE.search(text)
-    return match.group(1).strip() if match else text
