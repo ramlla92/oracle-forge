@@ -1,7 +1,9 @@
 import json
+
 from openai import OpenAI
-from agent.prompt_library import PromptLibrary
+
 from agent import llm_client
+from agent.prompt_library import PromptLibrary
 
 
 class ResponseSynthesizer:
