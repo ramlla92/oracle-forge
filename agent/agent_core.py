@@ -113,8 +113,9 @@ class AgentCore:
                 })
                 self.ctx.append_correction(
                     query=original_question,
-                    what_went_wrong=f"{failure_type}: {error_str}",
+                    what_went_wrong=error_str,
                     correct_approach=corrected,
+                    failure_category=failure_type,
                 )
                 current_query = corrected
 

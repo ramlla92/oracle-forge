@@ -73,26 +73,33 @@ class ContextManager:
         items = [f"- {h['query']}: {h['result_summary']}" for h in self._session_history[-5:]]
         return "## Recent Session Queries\n" + "\n".join(items)
 
-    def append_correction(self, query: str, what_went_wrong: str, correct_approach: str):
-        """Write a new correction entry to the corrections log immediately (never batch)."""
-        self._correction_count += 1
+    def append_correction(self, query: str, what_went_wrong: str, correct_approach: str,
+                          failure_category: str = "unknown"):
+        """Write a new correction table row immediately (never batch).
+
+        Matches the format defined in kb/corrections/corrections_log.md:
+        | ID | Date | Query | Failure Category | What Was Expected | What Agent Returned | Fix Applied | Post-Fix Score |
+        """
         entry_id = self._next_entry_id()
-        entry = (
-            f"\n---\n\n"
-            f"## Entry {entry_id}\n"
-            f"**Query:** {query}\n"
-            f"**What went wrong:** {what_went_wrong}\n"
-            f"**Correct approach:** {correct_approach}\n"
-            f"**Date:** {datetime.utcnow().date()}\n"
+        date = str(datetime.utcnow().date())
+        # Sanitize pipe chars so they don't break the table
+        def clean(s: str) -> str:
+            return s.replace("|", "/").replace("\n", " ").strip()
+
+        row = (
+            f"| {entry_id} | {date} | {clean(query)} | {clean(failure_category)} "
+            f"| — | {clean(what_went_wrong)} | {clean(correct_approach)} | pending |\n"
         )
         with open(self.corrections_path, "a") as f:
-            f.write(entry)
+            # Ensure we're on a new line before appending the row
+            f.write("\n" + row)
 
     def _next_entry_id(self) -> str:
+        """Count existing COR-NNN rows to derive the next ID."""
         try:
             with open(self.corrections_path) as f:
                 content = f.read()
-            existing = [line for line in content.splitlines() if line.startswith("## Entry ")]
-            return str(len(existing) + 1).zfill(3)
+            existing = [l for l in content.splitlines() if l.startswith("| COR-")]
+            return f"COR-{str(len(existing) + 1).zfill(3)}"
         except FileNotFoundError:
-            return "001"
+            return "COR-001"
