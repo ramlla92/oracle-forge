@@ -30,6 +30,20 @@ All column names, types, and sample values below are from actual loaded data.
 join key to DuckDB `review.business_ref` and `tip.business_ref`, which use format `"businessref_N"`.
 The numeric suffix is the same — only the prefix differs. See join_keys_glossary.md.
 
+**attributes field parsing (string values, not booleans):**
+- `WiFi`: `"u'free'"` or `"u'yes'"` = has WiFi; `"u'no'"` = no WiFi; `null` = unknown
+  - Filter for WiFi: `{$match: {"attributes.WiFi": {$nin: [null, "u'no'", "no", "None"]}}}`
+- `BusinessParking`: stored as Python repr string e.g. `"{'garage': False, 'lot': True}"` — use regex, not JSON parse
+  - Filter for any parking: `{$match: {"attributes.BusinessParking": {$regex: "True"}}}`
+- `BikeParking`: string `"True"` or `"False"` — filter: `{$match: {"attributes.BikeParking": "True"}}`
+- `BusinessAcceptsCreditCards`: string `"True"` or `"False"`
+
+**description field parsing:**
+Always follows: `"Located at [address] in [City], [STATE_ABBR], this [type] offers ... [Cat1], [Cat2]."`
+- City filter: `{$match: {description: {$regex: "CityName", $options: "i"}}}`
+- State filter: `{$match: {description: {$regex: ", PA,"}}}` (use 2-letter abbr with commas)
+- Category extraction: split on `"offers "` then split on `", "`
+
 ### checkin (~90 documents)
 
 | Column | Type | Sample Values |
@@ -40,6 +54,14 @@ The numeric suffix is the same — only the prefix differs. See join_keys_glossa
 
 **Critical:** `checkin.date` is a single comma-separated string of multiple timestamps, not an
 array and not a single date. Counting check-ins requires splitting this string before aggregating.
+
+**Extraction rule for checkin.date:**
+```python
+timestamps = [t.strip() for t in doc["date"].split(",")]
+# Then parse each with dateutil.parser.parse(t)
+```
+A `WHERE date > '2013-01-01'` filter on the raw field compares the entire multi-timestamp
+string as one value — it will not work. Always split first.
 
 ---
 
@@ -59,8 +81,12 @@ array and not a single date. Counting check-ins requires splitting this string b
 | text | VARCHAR | Free-form review text (unstructured field) |
 | date | VARCHAR | Mixed formats: "August 01, 2016 at 03:44 AM", "June 14, 2021 at 11:39 AM", "29 May 2013, 23:01" |
 
-**Critical:** `review.date` is VARCHAR with at least two distinct formats. Use `dateutil.parser`
-for all date parsing — do NOT use regex or strptime with a fixed format string.
+**Critical:** `review.date` is VARCHAR with at least two distinct formats:
+- `"August 01, 2016 at 03:44 AM"` → matches `strptime('%B %d, %Y at %I:%M %p')`
+- `"29 May 2013, 23:01"` → does NOT match the above format
+
+Use `dateutil.parser.parse()` for all date parsing — never a fixed strptime format.
+For DuckDB SQL: use `LIKE '%2018%'` for year-only checks, or `TRY_STRPTIME` with multiple formats.
 
 ### tip (~784 rows)
 

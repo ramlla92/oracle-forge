@@ -31,6 +31,17 @@ Reviewed at: every mob session
 
 ---
 
+## 2026-04-11 (second batch — feat/kb-v2)
+
+| Date | Document | Change Type | What Changed | Reason |
+|------|----------|-------------|--------------|--------|
+| 2026-04-11 | `domain_knowledge.md` | ADDED | New file created. This is the actual Layer 2 file loaded by `ContextManager` at `kb/domain/domain_knowledge.md`. Consolidates: Yelp domain term definitions, MongoDB attributes parsing rules (WiFi/Parking/BikeParking string format), description field parsing rules (city/state/category regex), date parsing rules per field, cross-dataset terms (churn, active account, fiscal quarter), and note on live join resolution in agent_core vs join_key_resolver.py. | `ContextManager` loads `kb/domain/domain_knowledge.md` as Layer 2. That file did not exist — Layer 2 was empty for every query run. This is the most critical gap from the driver branch analysis. |
+| 2026-04-11 | `yelp_schema.md` | UPDATED | Added MongoDB attributes field parsing rules (WiFi, BusinessParking, BikeParking, BusinessAcceptsCreditCards — all stored as strings not booleans). Added description field parsing rules (city/state regex, category extraction). Added explicit checkin.date split code example. Expanded review.date note to document both format variants and the strptime conflict. | Driver's agent/AGENT.md contained these rules but they were not in the KB — KB and agent context were out of sync. |
+| 2026-04-11 | `schema_overview.md` | UPDATED | Added all 12 DAB dataset DB type mappings from `agent/database_router.py DATASET_DB_MAP`. Added crmarenapro 6-database note and bookreview prefix-strip note. | KB only covered Yelp. Agent's DatabaseRouter knows all 12 datasets. KB must reflect this so Intelligence Officers can maintain schema stubs for each. |
+| 2026-04-11 | `join_keys_glossary.md` | INJECTION-TEST-RESULT | Injection test Q: "The agent needs to join MongoDB business.business_id with DuckDB review.business_ref. What transformation is required?" Expected: strip both prefixes, match on integer N, cannot do string equality. Status: PASS — 2026-04-11 | Verified after schema confirmation. |
+
+---
+
 ## Instructions for Future Entries and inspect its schema, update `yelp_schema.md` (or add a new schema doc) and log the update here with the confirmed field names and types.
 - Every time a new join key mismatch is confirmed by inspection, add it to `join_keys_glossary.md`, update `utils/join_key_resolver.py FORMAT_REGISTRY`, and log here.
 - Every time a new domain term is discovered through a probe failure, add it to `domain_terms.md` and log here with the probe ID that surfaced it.

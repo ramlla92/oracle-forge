@@ -51,3 +51,34 @@ Join key: MongoDB business.business_id ("businessid_N") ↔ DuckDB review.busine
 
 Date warning: All date fields are VARCHAR with mixed formats. Always use dateutil.parser, never strptime with fixed format.
 Null warning: tip.user_id contains NULL values. Filter WHERE user_id IS NOT NULL before joining.
+
+---
+
+## All 12 DAB Datasets — Database Type Map
+
+Source: `agent/database_router.py DATASET_DB_MAP` (confirmed from DAB db_config.yaml files).
+Use this to route queries to the correct database type before generating any query.
+
+| Dataset | DB 1 | Type | DB 2 | Type |
+|---------|------|------|------|------|
+| yelp | yelp_businessinfo | mongodb | yelp_user | duckdb |
+| agnews | articles_database | mongodb | metadata_database | sqlite |
+| bookreview | books_database | postgresql | review_database | sqlite |
+| googlelocal | business_database | postgresql | review_database | sqlite |
+| music_brainz | tracks_database | sqlite | sales_database | duckdb |
+| stockindex | indexinfo_database | sqlite | indextrade_database | duckdb |
+| stockmarket | stockinfo_database | sqlite | stocktrade_database | duckdb |
+| pancancer | clinical_database | postgresql | molecular_database | duckdb |
+| deps_dev | package_database | sqlite | project_database | duckdb |
+| github_repos | metadata_database | sqlite | artifacts_database | duckdb |
+| patents | publication_database | sqlite | CPCDefinition_database | postgresql |
+| crmarenapro | core_crm (sqlite), sales_pipeline (duckdb), support (postgresql), products_orders (sqlite), activities (duckdb), territory (sqlite) | — | 6 databases | — |
+
+**crmarenapro note:** 6 databases across 3 DB types. Known issue: TRIM() all ID fields before
+joining — 25% of IDs have trailing spaces. This is documented in `kb/AGENT.md` Critical Rules.
+
+**bookreview note:** Strip `bid_` / `bref_` prefixes before joining `book_id` to `purchase_id`.
+This is documented in `kb/AGENT.md` Critical Rules.
+
+**Schema stubs for non-Yelp datasets:** Add confirmed schema entries here as each dataset is
+loaded and introspected. Follow the Yelp template above.
