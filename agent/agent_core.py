@@ -1,11 +1,13 @@
 import json
 import os
+import re
 from datetime import datetime
 
 from agent.models import QueryRequest, AgentResponse, QueryTrace, SubQuery
 from agent.prompt_library import PromptLibrary
 from agent.context_manager import ContextManager
 from agent.self_corrector import SelfCorrector
+from agent.query_executor import QueryExecutor
 from agent import llm_client
 
 
@@ -16,6 +18,7 @@ class AgentCore:
         self.ctx = context_manager
         self.prompts = prompt_library
         self.corrector = SelfCorrector(prompt_library, self.client)
+        self.executor = QueryExecutor()
 
     def analyze_intent(self, question: str, available_databases: list[str]) -> dict:
         """Call LLM to identify which DBs to query and extract structured intent.
@@ -25,7 +28,7 @@ class AgentCore:
         system_context = self.ctx.get_full_context()
         prompt = self.prompts.intent_analysis(question, available_databases)
         text = llm_client.call(self.client, prompt, system=system_context, max_tokens=1024)
-        return json.loads(text)
+        return json.loads(_strip_markdown(text))
 
     def decompose_query(self, question: str, intent: dict) -> list[SubQuery]:
         """Break multi-DB intent into one SubQuery per target database."""
@@ -48,7 +51,8 @@ class AgentCore:
         else:
             prompt = self.prompts.nl_to_sql(question, schema, dialect=db_type)
 
-        return llm_client.call(self.client, prompt, max_tokens=512)
+        raw = llm_client.call(self.client, prompt, max_tokens=512)
+        return _strip_markdown(raw)
 
     def _get_schema_for_db(self, db_type: str) -> str:
         """Return schema string for the given DB type. Populated once AGENT.md has real schemas."""
@@ -122,9 +126,9 @@ class AgentCore:
         return {"error": "max retries exceeded"}, corrections
 
     def _call_mcp(self, db_type: str, query: str) -> dict:
-        """Call MCP Toolbox over HTTP. Driver 1's QueryExecutor replaces this stub."""
-        # TODO (Driver 1): replace with real MCP HTTP call via QueryExecutor
-        raise NotImplementedError(f"MCP call not wired yet for {db_type}")
+        """Call the MCP server (Python replacement for toolbox binary) via QueryExecutor."""
+        sub_query = SubQuery(database_type=db_type, query=query, intent="")
+        return self.executor.execute(sub_query)
 
     def _synthesize(self, question: str, raw_results: dict) -> str:
         prompt = self.prompts.synthesize_response(question, raw_results, {})
@@ -146,3 +150,12 @@ class AgentCore:
         fname = f"eval/run_logs/{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.json"
         with open(fname, "w") as f:
             json.dump(log_entry, f, indent=2)
+
+
+def _strip_markdown(text: str) -> str:
+    """Remove ```json ... ``` or ``` ... ``` wrappers from LLM response."""
+    text = text.strip()
+    match = re.search(r"```(?:json)?\s*([\s\S]*?)```", text)
+    if match:
+        return match.group(1).strip()
+    return text
