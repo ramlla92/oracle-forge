@@ -1,6 +1,6 @@
 # AI-DLC Inception Document — Oracle Forge
 **Team:** Falcon | **Sprint:** Weeks 8–9 | **Date:** April 9, 2026
-**Status:** DRAFT — Pending team approval at mob session
+**Status:** APPROVED — Mob session April 9, 2026
 
 ## Press Release
 Team Falcon's Oracle Forge is a production-grade natural language data analytics
@@ -86,7 +86,7 @@ mode documented in our corrections log.
 8. All six team members have committed to the oracle-forge repository.
 
 ## Mob Session Approval Record
-**Date of approval:** _______________
-**Approved by:** _______________
-**Hardest question asked:** _______________
-**Answer given:** _______________
+**Date of approval:** April 9, 2026
+**Approved by:** Team Falcon (all six members present — Drivers, Intelligence Officers, Signal Corps)
+**Hardest question asked:** If MCP Toolbox loses the database connection mid-query and returns a partial result with no error signal, how does the agent detect that the answer is incomplete?
+**Answer given:** It cannot detect this case from the tool response alone. The agent relies on the self-corrector diagnosis to catch empty-result anomalies, and on the response synthesizer to flag suspiciously low row counts. A connection-loss mid-query is a known gap. The mitigation is to validate result row counts against expected minimums before synthesizing a final answer, and to retry once on zero-row results before reporting failure.

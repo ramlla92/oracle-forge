@@ -28,12 +28,23 @@ from typing import Union
 # Drivers: populate this registry as new mismatches are discovered.
 # Document every entry in kb/domain/yelp_schema.md.
 FORMAT_REGISTRY: dict = {
-    # Yelp dataset: PostgreSQL integer user_id → MongoDB "USR-{id}" string
-    # NOTE: Confirm exact prefix by inspecting loaded MongoDB collection.
-    ("postgresql", "mongodb"): {
-        "prefix": "USR-",
-        "pad_width": 0,  # Set to e.g. 5 for zero-padded "USR-00123"
+    # Yelp dataset — CONFIRMED 2026-04-11 from schema_introspector.py against live data.
+    # MongoDB business.business_id = "businessid_N" → DuckDB review/tip.business_ref = "businessref_N"
+    # The numeric suffix N is identical. Only the prefix differs.
+    # NOTE: The agent also resolves this inline in agent_core._extract_business_refs().
+    # This registry is for manual use, testing, and future datasets.
+    ("mongodb_business", "duckdb_review"): {
+        "source_prefix": "businessid_",
+        "target_prefix": "businessref_",
+        "pad_width": 0,
     },
+    ("duckdb_review", "mongodb_business"): {
+        "source_prefix": "businessref_",
+        "target_prefix": "businessid_",
+        "pad_width": 0,
+    },
+    # bookreview dataset (PostgreSQL + SQLite) — prefix pattern TBC after dataset load
+    # ("postgresql_books", "sqlite_review"): { ... },
 }
 
 
@@ -63,8 +74,6 @@ def resolve_join_key(
     rule = FORMAT_REGISTRY.get((source_db.lower(), target_db.lower()))
 
     if rule is None:
-        # No registered rule — return None and let caller decide how to handle.
-        # Drivers: add the missing rule to FORMAT_REGISTRY and kb/domain docs.
         print(
             f"[join_key_resolver] WARNING: No format rule registered for "
             f"{source_db} → {target_db} (dataset={dataset}). "
@@ -72,50 +81,31 @@ def resolve_join_key(
         )
         return None
 
-    # --- postgresql integer → mongodb prefixed string ---
-    if source_db.lower() == "postgresql" and target_db.lower() == "mongodb":
-        prefix = rule.get("prefix", "")
-        pad = rule.get("pad_width", 0)
-        int_val = int(value)
-        padded = str(int_val).zfill(pad) if pad else str(int_val)
-        return f"{prefix}{padded}"
+    source_prefix = rule.get("source_prefix", "")
+    target_prefix = rule.get("target_prefix", "")
+    pad = rule.get("pad_width", 0)
 
-    # --- mongodb prefixed string → postgresql integer ---
-    if source_db.lower() == "mongodb" and target_db.lower() == "postgresql":
-        str_val = str(value)
-        rule_fwd = FORMAT_REGISTRY.get(("postgresql", "mongodb"), {})
-        prefix = rule_fwd.get("prefix", "")
-        stripped = str_val[len(prefix):] if str_val.startswith(prefix) else str_val
-        digits = re.sub(r"\D", "", stripped)
-        if not digits:
-            raise ValueError(
-                f"[join_key_resolver] Cannot extract integer from '{value}' "
-                f"using prefix='{prefix}'"
-            )
-        return int(digits)
-
-    # Fallback for unimplemented direction
-    print(
-        f"[join_key_resolver] WARNING: Rule found but direction not implemented "
-        f"for {source_db} → {target_db}. Returning None."
-    )
-    return None
+    str_val = str(value)
+    suffix = str_val[len(source_prefix):] if str_val.startswith(source_prefix) else re.sub(r"\D", "", str_val)
+    if pad:
+        suffix = suffix.zfill(pad)
+    return f"{target_prefix}{suffix}"
 
 
 # ---------------------------------------------------------------------------
 # Smoke test — run this file directly to verify basic behaviour
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
-    # PostgreSQL int → MongoDB string
-    result = resolve_join_key(12345, "postgresql", "mongodb")
-    assert result == "USR-12345", f"Expected 'USR-12345', got {result!r}"
+    # MongoDB businessid_N → DuckDB businessref_N (confirmed Yelp format)
+    result = resolve_join_key("businessid_49", "mongodb_business", "duckdb_review")
+    assert result == "businessref_49", f"Expected 'businessref_49', got {result!r}"
 
-    # MongoDB string → PostgreSQL int
-    result = resolve_join_key("USR-12345", "mongodb", "postgresql")
-    assert result == 12345, f"Expected 12345, got {result!r}"
+    # DuckDB businessref_N → MongoDB businessid_N (reverse)
+    result = resolve_join_key("businessref_34", "duckdb_review", "mongodb_business")
+    assert result == "businessid_34", f"Expected 'businessid_34', got {result!r}"
 
     # Unknown pair returns None
-    result = resolve_join_key(99, "duckdb", "mongodb")
+    result = resolve_join_key("userid_99", "duckdb_user", "mongodb_business")
     assert result is None
 
     print("join_key_resolver: all smoke tests passed.")

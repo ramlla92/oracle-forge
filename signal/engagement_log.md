@@ -4,6 +4,8 @@
 
 **Instructions:** Add a row for every post, comment, or community interaction the day it goes live. Do not batch. Include the link immediately — if a link is not available yet, mark as `[PENDING]` and update within 24 hours.
 
+> **Signal Corps action required:** All rows marked `[PENDING]` need real post links filled in. These cannot be generated automatically — they require actual posts on the respective platforms. Update each row the same day the post goes live. The engagement log is a graded deliverable presented at each mob session.
+
 ---
 
 ## Week 8

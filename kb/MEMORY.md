@@ -48,6 +48,7 @@ injection test before being committed.
 | `kb/domain/join_keys_glossary.md` | All confirmed join key format mismatches across datasets; resolver rules | Any cross-database join |
 | `kb/domain/unstructured_fields_inventory.md` | Which fields require extraction before aggregation; extraction patterns | Any query involving free-text fields |
 | `kb/domain/domain_terms.md` | Correct definitions of business terms not in any schema (active, churn, high-rated, fiscal quarter) | Any query using a business term |
+| `kb/domain/domain_knowledge.md` | **Layer 2 context file loaded by ContextManager.** Consolidates: domain terms, MongoDB attribute parsing rules, description field parsing, date parsing rules, all 12 dataset DB type map, live join resolution note | Loaded automatically at every session start by ContextManager |
 
 ---
 
@@ -92,7 +93,7 @@ the relevant documents are loaded:
 | Subdirectory | Documents | Last injection test | Status |
 |-------------|-----------|--------------------| -------|
 | architecture | 8 | 2026-04-09 | ✅ All passing |
-| domain | 4 | 2026-04-08 | ✅ All passing |
+| domain | 5 | 2026-04-11 | ✅ All passing (domain_knowledge.md added) |
 | evaluation | 3 | 2026-04-08 | ✅ All passing |
 | corrections | 1 | 2026-04-08 | ✅ Active |
 
