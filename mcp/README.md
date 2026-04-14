@@ -20,9 +20,6 @@ chmod +x toolbox
 
 # Start toolbox with this config
 ./toolbox --config mcp/tools.yaml
-
-# Verify all tools are live
-curl http://localhost:5000/v1/tools | python3 -m json.tool | grep name
 ```
 
 Expected tools in the output:
@@ -34,6 +31,21 @@ Expected tools in the output:
 - `cross_db_merge`
 
 If any tool is missing, check the corresponding `source` block in `tools.yaml` — a bad connection string will prevent the tool from loading.
+
+## Deliverable vs Runtime Mode
+
+For TRP1 submission alignment, `mcp/tools.yaml` is kept as the canonical four-database tool map (PostgreSQL, MongoDB, SQLite, DuckDB) with the expected tool names.
+
+At runtime on this VPS, the team currently uses `mcp/mcp_server.py` for compatibility and stable `/v1/tools` + `/v1/tools/{tool}:invoke` endpoints:
+
+```bash
+source .venv/bin/activate
+set -a && source .env && set +a
+uvicorn mcp.mcp_server:app --port 5000
+curl http://127.0.0.1:5000/v1/tools
+```
+
+This keeps implementation behavior stable while preserving the challenge-required MCP configuration artifact in `mcp/tools.yaml`.
 
 ## Environment Variables
 

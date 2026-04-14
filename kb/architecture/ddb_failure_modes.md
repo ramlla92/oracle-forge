@@ -18,6 +18,38 @@ DuckDB is one of the four database systems in DAB. It is an in-process analytica
 
 ---
 
+**Failure Mode 5 — Non-existent table queried (wrong_table).** The agent generates SQL referencing a table that does not exist in DuckDB. For the Yelp dataset, DuckDB (yelp_user) contains ONLY three tables: `review`, `tip`, `user`. There is NO `business` table and NO `attributes` table in DuckDB. Business data (name, city, state, categories, WiFi, parking, is_open, attributes) lives exclusively in MongoDB (yelp_businessinfo). Queries that join or filter on `business` in DuckDB will always fail with `Catalog Error: Table with name business does not exist`.
+
+**Detection:** Error message contains `Catalog Error: Table with name X does not exist`. Check which table name X is — if it is `business` or `attributes`, this is Failure Mode 5.
+
+**Fix direction:** Route all business attribute lookups to MongoDB. Retrieve `business_ref` IDs from DuckDB first if needed, then resolve business details via MongoDB aggregation pipeline.
+
+---
+
+**Failure Mode 6 — Fixed strptime format fails on mixed-format date fields.** DuckDB date columns in the Yelp dataset (`review.date`, `tip.date`, `user.yelping_since`) are VARCHAR with at least two known format variants:
+- `'August 01, 2016 at 03:44 AM'` (format: `'%B %d, %Y at %I:%M %p'`)
+- `'29 May 2013, 23:01'` (format: `'%d %B %Y, %H:%M'`)
+
+Using `strptime()` with any single fixed format raises `Invalid Input Error: Could not parse string` on rows that use the other format.
+
+**Detection:** Error message contains `Invalid Input Error: Could not parse string "X" according to format specifier`.
+
+**Fix direction:** Always use `COALESCE(TRY_STRPTIME(date_col, '%B %d, %Y at %I:%M %p'), TRY_STRPTIME(date_col, '%d %B %Y, %H:%M'))` for date parsing. For year-only filtering, use `LIKE '%2018%'` — it is safe across all format variants and avoids parsing entirely.
+
+---
+
 **Injection test question:** An agent runs a 30-day rolling average query and gets a syntax error. The query trace shows it called `postgres_query`. Which DuckDB failure mode is this and what is the fix?
 
 **Expected answer:** This is Failure Mode 4 — the correct MCP tool was not called. The agent routed an analytical query to the PostgreSQL tool instead of the DuckDB tool. The fix is to add a routing rule to AGENT.md specifying that rolling window and time-series queries must invoke `duckdb_query`, and to verify the DuckDB tool description in `tools.yaml` is specific enough for the agent's tool-selection logic to match it.
+
+---
+
+**Injection test question 2:** An agent generates `SELECT * FROM business WHERE city = 'Phoenix'` against DuckDB. What failure mode is this and what is the correct approach?
+
+**Expected answer:** Failure Mode 5 — non-existent table. DuckDB (yelp_user) has no `business` table. Business data is in MongoDB (yelp_businessinfo). The correct approach is to query MongoDB with `{$match: {description: {$regex: "Phoenix", $options: "i"}}}` against the `business` collection.
+
+---
+
+**Injection test question 3:** An agent filters DuckDB reviews with `WHERE strptime(date, '%B %d, %Y at %I:%M %p') >= '2016-01-01'` and gets `Invalid Input Error`. What failure mode is this and what is the fix?
+
+**Expected answer:** Failure Mode 6 — fixed strptime format fails on mixed-format date fields. The `review.date` column has at least two format variants. The fix is to use `COALESCE(TRY_STRPTIME(date, '%B %d, %Y at %I:%M %p'), TRY_STRPTIME(date, '%d %B %Y, %H:%M'))` for full date parsing, or `LIKE '%2016%'` for year-only filtering.

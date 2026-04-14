@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+# hooks/pre-commit — shared pre-commit hook for oracle-forge
+# Install: bash scripts/install-hooks.sh
+set -euo pipefail
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+cd "$REPO_ROOT"
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
+
+pass() { echo -e "${GREEN}[OK]${NC} $1"; }
+fail() { echo -e "${RED}[FAIL]${NC} $1"; exit 1; }
+warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
+
+echo "--- pre-commit checks ---"
+
+# 1. Block .env files from being committed
+staged=$(git diff --cached --name-only)
+for f in $staged; do
+    case "$f" in
+        .env|.env.local|.env.production|.env.staging)
+            fail "Attempt to commit secret file: $f — add it to .gitignore"
+            ;;
+        *.key|*_rsa|*_dsa|*id_rsa*)
+            fail "Attempt to commit potential private key: $f"
+            ;;
+    esac
+done
+pass "No secret files staged"
+
+# 2. Ruff lint — only on staged Python files
+staged_py=$(git diff --cached --name-only --diff-filter=ACM | grep '\.py$' || true)
+if [ -n "$staged_py" ]; then
+    VENV_PYTHON="$REPO_ROOT/.venv/bin/python"
+    if [ ! -x "$VENV_PYTHON" ]; then
+        warn "Virtualenv not found at .venv — skipping ruff. Run: python -m venv .venv && pip install -r requirements.txt"
+    else
+        if ! "$VENV_PYTHON" -m ruff check $staged_py --quiet; then
+            fail "Ruff found lint errors. Fix them or run: .venv/bin/python -m ruff check . --fix"
+        fi
+        pass "Ruff lint clean"
+    fi
+else
+    pass "No Python files staged — skipping lint"
+fi
+
+# 3. Run test suite
+VENV_PYTHON="$REPO_ROOT/.venv/bin/python"
+if [ -d "$REPO_ROOT/tests" ] && [ -x "$VENV_PYTHON" ]; then
+    if ! PYTHONPATH="$REPO_ROOT" "$VENV_PYTHON" -m pytest tests/ -q --tb=short 2>&1; then
+        fail "Tests failed — commit blocked. Fix failures before pushing."
+    fi
+    pass "All tests passed"
+else
+    warn "Skipping tests (no tests/ dir or no .venv)"
+fi
+
+echo "--- all checks passed ---"

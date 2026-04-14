@@ -19,6 +19,10 @@ DataAgentBench/
 logs/
 *.jsonl
 
+# Generated outputs
+utils/schema_output.md
+eval/run_logs/
+
 # OS
 .DS_Store
 
@@ -29,3 +33,4 @@ TRP1 Week 8-9 Practitioner Manual The Oracle Forge of Data Agent.docx
 oracle_forge_implementation_plan.docx.md
 
 CLAUDE.md
+toolbox

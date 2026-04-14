@@ -1,0 +1,82 @@
+kind: source
+name: postgres_yelp
+type: postgres
+host: 127.0.0.1
+port: 5432
+database: yelp
+user: ${POSTGRES_USER}
+password: ${POSTGRES_PASSWORD}
+---
+kind: source
+name: mongo_yelp
+type: mongodb
+uri: mongodb://127.0.0.1:27017/yelp_db
+---
+kind: source
+name: sqlite_dab
+type: sqlite
+database: /home/yakob/oracle-forge/DataAgentBench/query_bookreview/query_dataset/review_query.db
+---
+kind: source
+name: duckdb_dab
+type: duckdb
+database: /home/yakob/oracle-forge/DataAgentBench/query_yelp/query_dataset/yelp_user.db
+---
+kind: tool
+name: postgres_query
+type: postgres-execute-sql
+source: postgres_yelp
+description: "Executes a SQL query against the PostgreSQL Yelp database. Use for transactional queries on tables: business, review, user. Returns rows as JSON."
+parameters:
+  sql:
+    type: string
+    description: Valid PostgreSQL SQL query string. No DDL statements.
+---
+kind: tool
+name: mongo_aggregate
+type: mongodb-aggregate
+source: mongo_yelp
+description: "Executes a MongoDB aggregation pipeline against yelp_db. Use for queries on collections: business, checkin. Pipeline must be a valid JSON array."
+parameters:
+  collection:
+    type: string
+    description: MongoDB collection name to run the pipeline against.
+  pipeline:
+    type: string
+    description: JSON-encoded MongoDB aggregation pipeline array.
+---
+kind: tool
+name: mongo_find
+type: mongodb-find
+source: mongo_yelp
+description: "Executes a MongoDB find query against yelp_db. Use for single-collection lookups. For group-by or aggregation, use mongo_aggregate."
+parameters:
+  collection:
+    type: string
+    description: MongoDB collection name.
+  filter:
+    type: string
+    description: JSON-encoded MongoDB filter document.
+  projection:
+    type: string
+    description: JSON-encoded MongoDB projection document. Optional.
+---
+kind: tool
+name: sqlite_query
+type: sqlite-execute-sql
+source: sqlite_dab
+description: "Executes a SQL query against the DAB SQLite database. Use only for datasets loaded into SQLite. Returns rows as JSON."
+parameters:
+  sql:
+    type: string
+    description: Valid SQLite SQL query string.
+---
+kind: tool
+name: duckdb_query
+type: duckdb-execute-sql
+source: duckdb_dab
+description: "Executes analytical SQL against the DAB DuckDB database. Use for Yelp review, tip, and user tables. Supports QUALIFY, PIVOT, UNPIVOT, ASOF JOIN."
+parameters:
+  sql:
+    type: string
+    description: Valid DuckDB analytical SQL query string.

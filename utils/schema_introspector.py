@@ -23,7 +23,12 @@ the [ACTION REQUIRED] sections with confirmed column names and key formats.
 """
 
 import json
+import sqlite3
 from typing import Any
+
+import duckdb
+import psycopg2
+from pymongo import MongoClient
 
 
 # ---------------------------------------------------------------------------
@@ -122,7 +127,8 @@ def format_for_kb(introspection_result: dict) -> str:
             lines.append("| Column | Type | Sample Values |")
             lines.append("|--------|------|---------------|")
             for col in table.get("columns", []):
-                samples = ", ".join(str(v) for v in col.get("sample_values", []))
+                raw_samples = ", ".join(str(v) for v in col.get("sample_values", []))
+                samples = raw_samples[:120] + "..." if len(raw_samples) > 120 else raw_samples
                 lines.append(f"| {col['name']} | {col['type']} | {samples} |")
             lines.append("")
 
@@ -142,139 +148,112 @@ def format_for_kb(introspection_result: dict) -> str:
 # ---------------------------------------------------------------------------
 
 def _introspect_postgres(params: ConnectionParams) -> dict:
-    """
-    Introspect a PostgreSQL database.
-    Placeholder — replace with psycopg2 or asyncpg connection.
-
-    Real implementation should:
-      1. Connect using params["host"], params["port"], params["database"],
-         params["user"], params["password"].
-      2. Run: SELECT table_name FROM information_schema.tables
-              WHERE table_schema = 'public'
-      3. For each table, run: SELECT column_name, data_type
-                               FROM information_schema.columns
-                               WHERE table_name = %s
-      4. For each column, run: SELECT <col> FROM <table> LIMIT 3
-         to get sample values (useful for detecting key formats).
-      5. Run: SELECT relname, n_live_tup FROM pg_stat_user_tables
-         for approximate row counts.
-    """
-    print("[schema_introspector] PostgreSQL introspection — placeholder. "
-          "Replace with real psycopg2 connection.")
-    return {
-        "db_type": "postgresql",
-        "tables": [
-            {
-                "name": "business",
-                "columns": [
-                    {"name": "business_id", "type": "integer", "sample_values": [1, 2, 3]},
-                    {"name": "name",        "type": "text",    "sample_values": ["Joe's Diner"]},
-                    {"name": "city",        "type": "text",    "sample_values": ["Phoenix"]},
-                    {"name": "stars",       "type": "float",   "sample_values": [4.5]},
-                    {"name": "categories",  "type": "text",    "sample_values": ["Restaurants, Italian"]},
-                ]
-            },
-            {
-                "name": "review",
-                "columns": [
-                    {"name": "review_id",   "type": "integer", "sample_values": [101, 102]},
-                    {"name": "user_id",     "type": "integer", "sample_values": [12345]},
-                    {"name": "business_id", "type": "integer", "sample_values": [1]},
-                    {"name": "stars",       "type": "integer", "sample_values": [5]},
-                    {"name": "text",        "type": "text",    "sample_values": ["Great food!"]},
-                    {"name": "date",        "type": "date",    "sample_values": ["2025-11-01"]},
-                ]
-            },
-            {
-                "name": "user",
-                "columns": [
-                    {"name": "user_id",       "type": "integer", "sample_values": [12345]},
-                    {"name": "name",          "type": "text",    "sample_values": ["Alice"]},
-                    {"name": "review_count",  "type": "integer", "sample_values": [42]},
-                    {"name": "average_stars", "type": "float",   "sample_values": [3.8]},
-                ]
-            },
-        ],
-        "row_counts": {"business": 50000, "review": 1000000, "user": 200000},
-        "errors": [],
-    }
+    tables, row_counts, errors = [], {}, []
+    try:
+        conn = psycopg2.connect(
+            host=params.get("host", "127.0.0.1"),
+            port=params.get("port", 5432),
+            dbname=params["database"],
+            user=params["user"],
+            password=params.get("password", ""),
+        )
+        cur = conn.cursor()
+        cur.execute("SELECT table_name FROM information_schema.tables WHERE table_schema='public'")
+        table_names = [r[0] for r in cur.fetchall()]
+        for tname in table_names:
+            cur.execute("SELECT column_name, data_type FROM information_schema.columns WHERE table_name=%s", (tname,))
+            cols_raw = cur.fetchall()
+            columns = []
+            for col_name, col_type in cols_raw:
+                try:
+                    cur.execute(f'SELECT "{col_name}" FROM "{tname}" LIMIT 3')
+                    samples = [r[0] for r in cur.fetchall()]
+                except Exception:
+                    samples = []
+                columns.append({"name": col_name, "type": col_type, "sample_values": samples})
+            cur.execute(f'SELECT COUNT(*) FROM "{tname}"')
+            row_counts[tname] = cur.fetchone()[0]
+            tables.append({"name": tname, "columns": columns})
+        conn.close()
+    except Exception as e:
+        errors.append(str(e))
+    return {"db_type": "postgresql", "tables": tables, "row_counts": row_counts, "errors": errors}
 
 
 def _introspect_mongo(params: ConnectionParams) -> dict:
-    """
-    Introspect a MongoDB database.
-    Placeholder — replace with pymongo connection.
-
-    Real implementation should:
-      1. Connect using params["uri"], params["database"].
-      2. Run db.list_collection_names() to get collections.
-      3. For each collection, run collection.find_one() to get a sample document
-         and extract field names and types from the sample.
-      4. Run collection.estimated_document_count() for row counts.
-      5. Sample user_id values specifically to detect prefix format.
-    """
-    print("[schema_introspector] MongoDB introspection — placeholder. "
-          "Replace with real pymongo connection.")
-    return {
-        "db_type": "mongodb",
-        "tables": [
-            {
-                "name": "reviews",
-                "columns": [
-                    {"name": "user_id",  "type": "string",  "sample_values": ["USR-12345"]},
-                    {"name": "useful",   "type": "integer", "sample_values": [3]},
-                    {"name": "funny",    "type": "integer", "sample_values": [1]},
-                    {"name": "cool",     "type": "integer", "sample_values": [0]},
-                    {"name": "elite",    "type": "array",   "sample_values": [["2023", "2024"]]},
-                ]
-            },
-        ],
-        "row_counts": {"reviews": 1000000},
-        "errors": [],
-    }
+    tables, row_counts, errors = [], {}, []
+    try:
+        client = MongoClient(params.get("uri", "mongodb://127.0.0.1:27017"))
+        db = client[params["database"]]
+        for cname in db.list_collection_names():
+            sample_doc = db[cname].find_one()
+            columns = []
+            if sample_doc:
+                for field, value in sample_doc.items():
+                    # Sample 3 values for join key format detection
+                    samples = [d.get(field) for d in db[cname].find({field: {"$exists": True}}, {field: 1}).limit(3)]
+                    columns.append({
+                        "name": field,
+                        "type": type(value).__name__,
+                        "sample_values": [str(s) for s in samples if s is not None],
+                    })
+            row_counts[cname] = db[cname].estimated_document_count()
+            tables.append({"name": cname, "columns": columns})
+        client.close()
+    except Exception as e:
+        errors.append(str(e))
+    return {"db_type": "mongodb", "tables": tables, "row_counts": row_counts, "errors": errors}
 
 
 def _introspect_sqlite(params: ConnectionParams) -> dict:
-    """
-    Introspect a SQLite database.
-    Placeholder — replace with sqlite3 connection.
-
-    Real implementation should:
-      1. Connect using params["db_path"].
-      2. Run: SELECT name FROM sqlite_master WHERE type='table'
-      3. For each table, run: PRAGMA table_info(<table>)
-      4. Run: SELECT COUNT(*) FROM <table> for row counts.
-    """
-    print("[schema_introspector] SQLite introspection — placeholder. "
-          "Replace with real sqlite3 connection.")
-    return {
-        "db_type": "sqlite",
-        "tables": [],
-        "row_counts": {},
-        "errors": ["Placeholder — connect to actual SQLite db_path to introspect."],
-    }
+    tables, row_counts, errors = [], {}, []
+    try:
+        conn = sqlite3.connect(params["db_path"])
+        cur = conn.cursor()
+        cur.execute("SELECT name FROM sqlite_master WHERE type='table'")
+        table_names = [r[0] for r in cur.fetchall()]
+        for tname in table_names:
+            cur.execute(f"PRAGMA table_info('{tname}')")
+            cols_raw = cur.fetchall()  # (cid, name, type, notnull, dflt, pk)
+            columns = []
+            for col in cols_raw:
+                col_name, col_type = col[1], col[2]
+                try:
+                    cur.execute(f'SELECT "{col_name}" FROM "{tname}" LIMIT 3')
+                    samples = [r[0] for r in cur.fetchall()]
+                except Exception:
+                    samples = []
+                columns.append({"name": col_name, "type": col_type, "sample_values": samples})
+            cur.execute(f'SELECT COUNT(*) FROM "{tname}"')
+            row_counts[tname] = cur.fetchone()[0]
+            tables.append({"name": tname, "columns": columns})
+        conn.close()
+    except Exception as e:
+        errors.append(str(e))
+    return {"db_type": "sqlite", "tables": tables, "row_counts": row_counts, "errors": errors}
 
 
 def _introspect_duckdb(params: ConnectionParams) -> dict:
-    """
-    Introspect a DuckDB database.
-    Placeholder — replace with duckdb connection.
-
-    Real implementation should:
-      1. Connect using params["db_path"] via duckdb.connect().
-      2. Run: SHOW TABLES
-      3. For each table, run: DESCRIBE <table>
-      4. Run: SELECT COUNT(*) FROM <table> for row counts.
-      5. Check for pre-aggregated tables (names ending in _summary, _agg, _daily).
-    """
-    print("[schema_introspector] DuckDB introspection — placeholder. "
-          "Replace with real duckdb connection.")
-    return {
-        "db_type": "duckdb",
-        "tables": [],
-        "row_counts": {},
-        "errors": ["Placeholder — connect to actual DuckDB db_path to introspect."],
-    }
+    tables, row_counts, errors = [], {}, []
+    try:
+        conn = duckdb.connect(params["db_path"], read_only=True)
+        table_names = [r[0] for r in conn.execute("SHOW TABLES").fetchall()]
+        for tname in table_names:
+            desc = conn.execute(f"DESCRIBE {tname}").fetchall()  # (name, type, null, key, default, extra)
+            columns = []
+            for col in desc:
+                col_name, col_type = col[0], col[1]
+                try:
+                    samples = [r[0] for r in conn.execute(f'SELECT "{col_name}" FROM "{tname}" LIMIT 3').fetchall()]
+                except Exception:
+                    samples = []
+                columns.append({"name": col_name, "type": col_type, "sample_values": samples})
+            row_counts[tname] = conn.execute(f'SELECT COUNT(*) FROM "{tname}"').fetchone()[0]
+            tables.append({"name": tname, "columns": columns})
+        conn.close()
+    except Exception as e:
+        errors.append(str(e))
+    return {"db_type": "duckdb", "tables": tables, "row_counts": row_counts, "errors": errors}
 
 
 def _detect_join_key_mismatches(db_schemas: list[dict]) -> list[str]:

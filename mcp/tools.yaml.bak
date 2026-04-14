@@ -1,0 +1,165 @@
+# mcp/tools.yaml
+# Oracle Forge — MCP Toolbox for Databases configuration
+# Defines all database connections and tools for the DAB agent.
+# Run with: ./toolbox --config mcp/tools.yaml
+# Verify: curl http://localhost:5000/v1/tools | python3 -m json.tool | grep name
+#
+# INSTRUCTIONS FOR DRIVERS:
+# 1. Replace all <PLACEHOLDERS> with actual values from your environment.
+# 2. After adding a new tool, restart the toolbox and re-verify.
+# 3. Document every new tool in utils/README.md and the relevant kb/architecture doc.
+# 4. Tool names must be exact — the agent's tool-selection logic matches on these strings.
+
+sources:
+
+  # ------------------------------------------------------------------
+  # PostgreSQL — transactional data (Yelp: business, review, user)
+  # ------------------------------------------------------------------
+  postgres_yelp:
+    kind: "postgres"
+    host: "127.0.0.1"
+    port: 5432
+    database: "yelp"
+    user: "${POSTGRES_USER}"
+    password: "${POSTGRES_PASSWORD}"    # Loaded from .env — never hardcode
+
+  # ------------------------------------------------------------------
+  # MongoDB — CRM / support / unstructured collections
+  # ------------------------------------------------------------------
+  mongo_yelp:
+    kind: "mongodb"
+    uri: "mongodb://127.0.0.1:27017"
+    database: "yelp_db"
+
+  # ------------------------------------------------------------------
+  # SQLite — lightweight datasets (loaded from file path)
+  # ------------------------------------------------------------------
+  sqlite_dab:
+    kind: "sqlite"
+    db_path: "/home/natnael/oracle-forge/db/dab_sqlite.db"
+
+  # ------------------------------------------------------------------
+  # DuckDB — analytical / time-series datasets
+  # ------------------------------------------------------------------
+  duckdb_dab:
+    kind: "duckdb"
+    db_path: "/home/natnael/oracle-forge/db/yelp_user.db"
+
+tools:
+
+  # ------------------------------------------------------------------
+  # PostgreSQL tools
+  # ------------------------------------------------------------------
+  postgres_query:
+    kind: "postgres-sql"
+    source: "postgres_yelp"
+    description: >
+      Executes a SQL query against the PostgreSQL Yelp database.
+      Use for transactional queries on tables: business, review, user.
+      Returns rows as JSON. Do NOT use for MongoDB collections,
+      SQLite tables, or DuckDB analytical datasets.
+    parameters:
+      sql:
+        type: string
+        description: "Valid PostgreSQL SQL query string. No DDL statements."
+
+  # ------------------------------------------------------------------
+  # MongoDB tools
+  # ------------------------------------------------------------------
+  mongo_aggregate:
+    kind: "mongodb-aggregate"
+    source: "mongo_yelp"
+    description: >
+      Executes a MongoDB aggregation pipeline against the Yelp MongoDB database.
+      Use for queries on collections: reviews, support_tickets, user_profiles.
+      Returns documents as JSON. Do NOT use for PostgreSQL tables or SQL databases.
+      Pipeline must be a valid MongoDB aggregation array (e.g. [$match, $group, $project]).
+    parameters:
+      collection:
+        type: string
+        description: "MongoDB collection name to run the pipeline against."
+      pipeline:
+        type: string
+        description: "JSON-encoded MongoDB aggregation pipeline array."
+
+  mongo_find:
+    kind: "mongodb-find"
+    source: "mongo_yelp"
+    description: >
+      Executes a simple MongoDB find query (filter + projection) against the Yelp MongoDB database.
+      Use for single-collection lookups where aggregation is not needed.
+      For complex joins or group-by operations, use mongo_aggregate instead.
+    parameters:
+      collection:
+        type: string
+        description: "MongoDB collection name."
+      filter:
+        type: string
+        description: "JSON-encoded MongoDB filter document."
+      projection:
+        type: string
+        description: "JSON-encoded MongoDB projection document. Optional."
+
+  # ------------------------------------------------------------------
+  # SQLite tools
+  # ------------------------------------------------------------------
+  sqlite_query:
+    kind: "sqlite-sql"
+    source: "sqlite_dab"
+    description: >
+      Executes a SQL query against the DAB SQLite database.
+      Use only for datasets loaded into SQLite (check eval/list_datasets.py output).
+      Returns rows as JSON. Do NOT use for PostgreSQL, MongoDB, or DuckDB sources.
+    parameters:
+      sql:
+        type: string
+        description: "Valid SQLite SQL query string."
+
+  # ------------------------------------------------------------------
+  # DuckDB tools
+  # ------------------------------------------------------------------
+  duckdb_query:
+    kind: "duckdb-sql"
+    source: "duckdb_dab"
+    description: >
+      Executes an analytical SQL query against the DAB DuckDB database.
+      Use for time-series aggregations, rolling averages, window functions,
+      percentile calculations, and large columnar scans.
+      Supports DuckDB-specific syntax: QUALIFY, PIVOT, UNPIVOT, ASOF JOIN.
+      Returns columnar result as JSON. Do NOT use for transactional queries
+      or collections — use postgres_query or mongo_aggregate for those.
+    parameters:
+      sql:
+        type: string
+        description: "Valid DuckDB analytical SQL query string."
+
+  # ------------------------------------------------------------------
+  # Cross-database merge tool
+  # ------------------------------------------------------------------
+  cross_db_merge:
+    kind: "python-function"
+    description: >
+      Merges two result sets from different database tools on a specified key,
+      after applying join key format resolution via join_key_resolver.
+      Use this tool whenever a query requires combining results from two
+      different database systems (e.g. PostgreSQL revenue + MongoDB ticket counts).
+      Do NOT attempt raw SQL joins across database types — use this tool instead.
+    parameters:
+      left_results:
+        type: string
+        description: "JSON-encoded result set from the first database tool."
+      right_results:
+        type: string
+        description: "JSON-encoded result set from the second database tool."
+      left_key:
+        type: string
+        description: "Column name of the join key in the left result set."
+      right_key:
+        type: string
+        description: "Column name of the join key in the right result set."
+      left_db:
+        type: string
+        description: "Source database type for the left result (postgresql/mongodb/sqlite/duckdb)."
+      right_db:
+        type: string
+        description: "Source database type for the right result (postgresql/mongodb/sqlite/duckdb)."

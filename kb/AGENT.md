@@ -79,3 +79,7 @@
 6. Word boundaries in regex: use \bWORD\b not WORD (MALE matches inside FEMALE).
 7. Run queries to different databases in parallel, not sequentially.
 8. Spend ~20% of tool calls on exploration (list_db, sample queries) before analytical queries.
+9. SQL output: return raw SQL only — never wrap in code fences, never prepend explanation text. If you cannot answer, return `SELECT NULL AS reason`. (Pattern A — 9 failures in corrections log)
+10. MongoDB pipeline output: the first character must be `[` — return a raw JSON array, never a quoted string or code fence. If the pipeline arrives as a string, strip quotes and json.loads() before passing to PyMongo. (Pattern B — 12 failures in corrections log)
+11. DuckDB contains ONLY 3 tables: `review`, `tip`, `user`. There is NO `business` table in DuckDB. Any query involving business data (name, city, stars, categories, hours, attributes) MUST route to MongoDB, not DuckDB. Never generate DuckDB SQL that references or joins `business`.
+12. DuckDB date column has two inconsistent formats: `'August 01, 2016 at 03:44 AM'` and `'29 May 2013, 23:01'`. Never use direct string comparison or BETWEEN for dates in DuckDB. Always parse using COALESCE across both strptime patterns: `COALESCE(TRY_STRPTIME(date_col, '%B %d, %Y at %I:%M %p'), TRY_STRPTIME(date_col, '%d %B %Y, %H:%M'))`.

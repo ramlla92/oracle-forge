@@ -1,0 +1,23 @@
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+exclude = [
+  ".git",
+  ".venv",
+  "DataAgentBench",
+]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W"]
+
+[tool.ruff.lint.per-file-ignores]
+# Prompt f-strings are inherently long; E501 is not actionable here
+"agent/prompt_library.py" = ["E501"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
