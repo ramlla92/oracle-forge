@@ -41,3 +41,5 @@ Then add a row to the table above with the date, query count, pass@1, and a one-
 | 20260414_201705 | yelp | 7/7 | 100% | pass@3 | — |
 | 20260414_203704 | yelp | 6/7 | 86% | query-pass@1 | — |
 | 20260414_204206 | yelp | 7/7 | 100% | query-pass@1 | — |
+| 20260414_205611 | yelp | 6/7 | 86% | query-pass@1 | — |
+| 20260414_205915 | yelp | 7/7 | 100% | query-pass@1 | — |

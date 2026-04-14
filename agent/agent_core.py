@@ -103,6 +103,23 @@ class AgentCore:
         if mongo_sq and duck_sq and join_direction == "duckdb_first":
             # DuckDB-first join: run DuckDB first to find top business_refs,
             # then look up MongoDB for names/categories.
+
+            # If the direction was overridden to duckdb_first AFTER decompose_query already
+            # placed a SELECT 1 placeholder for DuckDB (because the LLM returned mongodb_first),
+            # we need to regenerate a real DuckDB query now.
+            if duck_sq.query.strip().upper() == "SELECT 1":
+                try:
+                    real_duck_query = self._generate_query_for_db(
+                        request.question, "duckdb", intent
+                    )
+                    duck_sq = SubQuery(
+                        database_type="duckdb",
+                        query=real_duck_query,
+                        intent=duck_sq.intent,
+                    )
+                except ValueError:
+                    pass  # fall through with SELECT 1 — will still fail gracefully
+
             # If the question asks about categories, remove any LIMIT from the DuckDB query
             # so we get ALL business_refs (category aggregation needs all, not just top N).
             if "categor" in request.question.lower():
