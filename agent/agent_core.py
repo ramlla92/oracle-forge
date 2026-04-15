@@ -295,10 +295,46 @@ class AgentCore:
             sub_queries = [mongo_sq if sq.database_type == "mongodb" else duck_sq
                            for sq in sub_queries]
         else:
-            for sq in sub_queries:
-                result, corrections = self._execute_with_retry(sq, request.question)
-                raw_results[sq.database_type] = result
-                self_corrections.extend(corrections)
+            # Generic multi-DB path — handles postgresql+sqlite, and any other combination
+            pg_sq   = next((sq for sq in sub_queries if sq.database_type == "postgresql"), None)
+            sql_sq  = next((sq for sq in sub_queries if sq.database_type == "sqlite"), None)
+
+            if pg_sq and sql_sq:
+                # PostgreSQL-first: get IDs from PostgreSQL, filter SQLite by those IDs
+                pg_result, pg_corr = self._execute_with_retry(pg_sq, request.question)
+                raw_results["postgresql"] = pg_result
+                self_corrections.extend(pg_corr)
+
+                # Extract book_ids from PostgreSQL result and convert to purchase_ids for SQLite
+                pg_ids = _extract_pg_ids(pg_result)
+                if pg_ids:
+                    try:
+                        purchase_ids_sql = ", ".join(f"'purchaseid_{i}'" for i in pg_ids)
+                        new_sql_query = self._generate_sqlite_with_ids(
+                            request.question, self.ctx.get_schema_for_db("sqlite"),
+                            purchase_ids_sql
+                        )
+                        sql_sq = SubQuery(
+                            database_type="sqlite",
+                            query=new_sql_query,
+                            intent=sql_sq.intent,
+                        )
+                        merge_operations.append(
+                            f"postgresql→sqlite join on {len(pg_ids)} book ids"
+                        )
+                    except ValueError:
+                        pass
+
+                sql_result, sql_corr = self._execute_with_retry(sql_sq, request.question)
+                raw_results["sqlite"] = sql_result
+                self_corrections.extend(sql_corr)
+                sub_queries = [pg_sq if sq.database_type == "postgresql" else sql_sq
+                               for sq in sub_queries]
+            else:
+                for sq in sub_queries:
+                    result, corrections = self._execute_with_retry(sq, request.question)
+                    raw_results[sq.database_type] = result
+                    self_corrections.extend(corrections)
 
         answer = self._synthesize(request.question, raw_results)
 
@@ -383,6 +419,31 @@ class AgentCore:
         """Call the MCP server (Python replacement for toolbox binary) via QueryExecutor."""
         sub_query = SubQuery(database_type=db_type, query=query, intent="")
         return self.executor.execute(sub_query)
+
+    def _generate_sqlite_with_ids(self, question: str, schema: str, purchase_ids_sql: str) -> str:
+        """Generate a SQLite query filtered to specific purchase_ids from PostgreSQL results."""
+        prompt = f"""Generate a SQLite query for this question.
+The books have already been filtered by PostgreSQL. Now filter the reviews for those books.
+The query MUST use: WHERE purchase_id IN ({purchase_ids_sql})
+
+Schema:
+{schema}
+
+Question: {question}
+
+Rules:
+- Use purchase_id IN (...) as the primary filter — this is mandatory
+- Apply ALL other filters from the question (rating threshold, date range, etc.)
+- For rating filters: GROUP BY title, HAVING AVG(rating) >= threshold
+- For date filters: use strftime('%Y', review_time) >= 'YEAR'
+- Return title and any computed metrics (avg_rating, etc.)
+- Return only the SQL query, no explanation, no markdown code fences"""
+        raw = llm_client.call(self.client, prompt,
+                              system=self.ctx.get_full_context(), max_tokens=512)
+        cleaned = _strip_markdown(raw)
+        if not _looks_like_query(cleaned, "sqlite"):
+            raise ValueError(f"LLM returned non-query for sqlite: {cleaned[:120]}")
+        return cleaned
 
     def _synthesize(self, question: str, raw_results: dict) -> str:
         enriched = _augment_with_category_aggregation(raw_results)
@@ -720,3 +781,22 @@ def _compute_top_state_by_reviews(
 
     return top_state, top_refs, total_cnt, avg_rating
 
+
+
+def _extract_pg_ids(pg_result) -> list[str]:
+    """Extract the numeric suffix from PostgreSQL book_id values for SQLite join.
+    Returns list of integer strings e.g. ['1', '5', '42'] from 'bookid_1', 'bookid_5', etc.
+    """
+    rows = pg_result if isinstance(pg_result, list) else pg_result.get("rows", [])
+    ids = []
+    seen = set()
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        book_id = row.get("book_id", "")
+        if isinstance(book_id, str) and book_id.startswith("bookid_"):
+            n = book_id.split("bookid_", 1)[1]
+            if n not in seen:
+                seen.add(n)
+                ids.append(n)
+    return ids

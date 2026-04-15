@@ -5,31 +5,22 @@ class PromptLibrary:
 
     def intent_analysis(self, question: str, available_databases: list[str]) -> str:
         return f"""Analyze this data question and determine which databases to query.
-Consult the domain knowledge in your context for any ambiguous terms or fiscal/status conventions.
+Consult the schema in your context (AGENT.md Layer 1) for the exact tables and fields for the active dataset.
 
 Question: {question}
 Available databases: {', '.join(available_databases)}
 
-CRITICAL ROUTING RULES for Yelp dataset:
-- MongoDB (yelp_db) contains: business attributes (WiFi, parking, credit cards), location (city/state in description text), categories (in description text), is_open, review_count
-- DuckDB (yelp_user.db) contains: review ratings (rating field), review text, tip text, user registration dates (user.yelping_since)
-- MongoDB has NO stars or rating field — ratings ONLY exist in DuckDB review.rating
-- ANY question involving average rating, stars, or score for businesses MUST include BOTH mongodb AND duckdb
-- ANY question involving user registration dates or review dates MUST include duckdb
-- ANY question about business attributes (WiFi, parking, credit cards, categories) uses mongodb
-
-JOIN DIRECTION RULES:
-- Use "mongodb_first" when: MongoDB's attribute/location filter is the main discriminator
-  (e.g., "businesses with WiFi in PA" → MongoDB filters, DuckDB computes avg rating)
-  ALWAYS use "mongodb_first" for "which state has the most X" questions — state extraction
-  requires reading MongoDB description text, which Python post-processes. DuckDB cannot group by state.
-- Use "duckdb_first" when: DuckDB's time/rating data is the main discriminator
-  (e.g., "highest rated business in date range" → DuckDB finds top business, MongoDB looks up name/category)
-  (e.g., "categories most reviewed by 2016 users" → DuckDB finds business_refs for 2016 users, MongoDB looks up categories)
+ROUTING RULES — use the schema in your context to determine which database holds the needed fields:
+- Route to the database that contains the fields required to answer the question
+- If the question needs data from multiple databases, include all of them and set requires_join=true
+- Use "mongodb_first" when a NoSQL attribute/location filter is the main discriminator
+- Use "duckdb_first" when DuckDB time/rating aggregation is the main discriminator
+- Use "postgresql_first" when PostgreSQL metadata is the main discriminator and SQLite holds reviews
+- Use "sqlite_first" when SQLite holds the review/rating data and the other DB holds metadata
 
 Respond with valid JSON only:
 {{
-  "target_databases": ["mongodb", "duckdb"],
+  "target_databases": ["database_type_1", "database_type_2"],
   "intent_summary": "brief description of what data is needed",
   "requires_join": true,
   "join_direction": "mongodb_first",
@@ -37,37 +28,20 @@ Respond with valid JSON only:
 }}"""
 
     def nl_to_sql(self, question: str, schema: str, dialect: str = "postgresql") -> str:
-        date_rule = ""
-        if dialect == "duckdb":
-            date_rule = """
-CRITICAL DATE RULE for DuckDB: The 'date' column has mixed format strings. NEVER use strptime, TRY_CAST, or date functions.
-ALWAYS use LIKE pattern matching for date filtering:
-- Full year (e.g. 2018): date LIKE '%2018%'
-- Month range Jan-Jun 2016:
-  (date LIKE '2016-01%' OR date LIKE '2016-02%' OR date LIKE '2016-03%'
-   OR date LIKE '2016-04%' OR date LIKE '2016-05%' OR date LIKE '2016-06%'
-   OR date LIKE '%January%2016%' OR date LIKE '%February%2016%' OR date LIKE '%March%2016%'
-   OR date LIKE '%April%2016%' OR date LIKE '%May%2016%' OR date LIKE '%June%2016%'
-   OR date LIKE '% Jan 2016%' OR date LIKE '% Feb 2016%' OR date LIKE '% Mar 2016%'
-   OR date LIKE '% Apr 2016%' OR date LIKE '% May 2016%' OR date LIKE '% Jun 2016%')
-- User registration year: yelping_since LIKE '%2016%'"""
+        pg_note = ""
+        if dialect == "postgresql":
+            pg_note = "\n- IMPORTANT: PostgreSQL and SQLite are SEPARATE databases. Do NOT join to SQLite tables (review) in this query. Only query tables available in PostgreSQL. Always include book_id in the SELECT so results can be joined to SQLite later."
         return f"""Generate a {dialect.upper()} query for this question.
 
 Schema:
 {schema}
 
 Question: {question}
-{date_rule}
+
 Rules:
-- Return only the SQL query, no explanation
-- Use exact table and column names from the schema
-- DuckDB does NOT have business names, categories, or location data — those are in MongoDB.
-  If the question asks for categories or business names, only SELECT business_ref + COUNT/metric.
-  Do NOT SELECT or fabricate a 'category' column in DuckDB — use business_ref only.
-- CRITICAL: Do NOT add LIMIT unless the question asks for exactly 1 specific business.
-  WRONG: adding LIMIT 5 when question asks "which 5 categories" — LIMIT applies to categories, NOT businesses.
-  For ANY question about "top N categories": return ALL business_refs with NO LIMIT. Category aggregation happens separately.
-- For "since YEAR" phrasing: do NOT filter reviews by date — "since 2016" means user-registration filter only.
+- Return only the SQL query, no explanation, no markdown code fences
+- Use exact table and column names from the schema above
+- For apostrophes in string literals use doubled single quotes: 'Children''s Books' — NEVER backslash escaping{pg_note}
 - For {dialect}: {self._dialect_rules(dialect)}"""
 
     def nl_to_mongodb(self, question: str, collection_schema: str) -> str:
@@ -137,8 +111,8 @@ Return only the valid JSON array, no explanation, no markdown fences."""
     def nl_to_sql_with_refs(self, question: str, schema: str, business_refs_sql: str,
                             dialect: str = "duckdb") -> str:
         return f"""Generate a {dialect.upper()} query for this question.
-The query MUST filter business_ref to only these values (already resolved from MongoDB):
-business_ref IN ({business_refs_sql})
+The query MUST filter to only these IDs (already resolved from the other database):
+id IN ({business_refs_sql})
 
 Schema:
 {schema}
@@ -146,14 +120,10 @@ Schema:
 Question: {question}
 
 Rules:
-- Use business_ref IN (...) as the primary filter — do not search by text or location
-- Return only the SQL query, no explanation
-- Use exact column names from the schema
-- Do NOT include a state, city, or location column — the group identity is already known from MongoDB context
-- Do NOT hardcode or fabricate location names (no 'Unknown', 'PA', etc.) — only return computed metrics
-- For avg rating questions: SELECT AVG(r.rating) AS avg_rating FROM review r WHERE r.business_ref IN (...)
-- For count/date questions: use date LIKE '%YEAR%' for year filtering (dates have mixed formats)
-- For DuckDB: {self._dialect_rules(dialect)}"""
+- Use the id IN (...) filter as the primary constraint
+- Return only the SQL query, no explanation, no markdown code fences
+- Use exact column names from the schema above
+- For {dialect}: {self._dialect_rules(dialect)}"""
 
     def nl_to_mongodb_lookup(self, question: str, schema: str, business_ids_json: str) -> str:
         """Generate MongoDB lookup by specific business_ids (for duckdb_first joins)."""
@@ -270,17 +240,13 @@ Return only valid JSON."""
 
     def _dialect_rules(self, dialect: str) -> str:
         rules = {
-            "postgresql": "use ILIKE for case-insensitive search, LIMIT for pagination",
-            "sqlite": "use LIKE for search, use strftime for dates",
+            "postgresql": "use standard PostgreSQL syntax, ILIKE for case-insensitive search, cast types explicitly",
+            "sqlite": "use SQLite syntax, strftime('%Y', date_col) for year extraction, LIKE for text search",
             "duckdb": (
                 "use DuckDB analytical functions. "
-                "IMPORTANT: date column stores mixed-format strings: 'August 01, 2016 at 03:44 AM', '29 May 2013, 23:01', '2016-04-02 23:09:00'. "
-                "For a full-year filter: date LIKE '%2018%'. "
-                "For a month-range filter (e.g. Jan-Jun 2016), use OR of patterns: "
-                "(date LIKE '2016-01%' OR date LIKE '2016-02%' OR date LIKE '2016-03%' OR date LIKE '2016-04%' OR date LIKE '2016-05%' OR date LIKE '2016-06%' "
-                "OR date LIKE '%January%2016%' OR date LIKE '%February%2016%' OR date LIKE '%March%2016%' OR date LIKE '%April%2016%' OR date LIKE '%May%2016%' OR date LIKE '%June%2016%' "
-                "OR date LIKE '% Jan 2016%' OR date LIKE '% Feb 2016%' OR date LIKE '% Mar 2016%' OR date LIKE '% Apr 2016%' OR date LIKE '% May 2016%' OR date LIKE '% Jun 2016%'). "
-                "For user registration year filter: yelping_since LIKE '%2016%'"
+                "For date columns stored as VARCHAR with mixed formats, use LIKE '%YEAR%' for year-only filters. "
+                "For full date parsing use COALESCE(TRY_STRPTIME(col, fmt1), TRY_STRPTIME(col, fmt2)). "
+                "Consult the schema in your context for the exact date formats in the active dataset."
             ),
             "mongodb": "return a MongoDB aggregation pipeline as a JSON array",
         }

@@ -104,6 +104,55 @@ These mismatches will cause silent wrong answers if not handled:
    - DuckDB review.user_id = `"userid_548"` — prefixed string
    - No cross-DB user join is possible on the Yelp dataset without disambiguation.
 
+### PostgreSQL — Bookreview books_database (bookreview_db)
+**Table: books_info** (~200 rows)
+| Field | Type | Sample Values |
+|-------|------|---------------|
+| book_id | text | "bookid_1", "bookid_2" |
+| title | text | "Chaucer", "Service: A Navy SEAL at War" |
+| subtitle | text | free text or null |
+| author | text | author name string |
+| rating_number | bigint | 29, 3421, 1 — total number of ratings |
+| features | text | free text product features |
+| description | text | free text book description |
+| price | double precision | numeric price |
+| store | text | store name |
+| categories | text | JSON array string e.g. `["Books", "Literature & Fiction", "History & Criticism"]` |
+| details | text | free text containing publication info — year, language, format, ISBN, pages |
+
+**Critical parsing rules:**
+- `categories` is stored as a JSON array string. Use `categories LIKE '%Literature & Fiction%'` for filtering — do NOT try to parse as JSON in SQL.
+- For category values containing apostrophes (e.g. `Children's Books`), use doubled single quotes in SQL: `categories LIKE '%Children''s Books%'` — NEVER use backslash escaping (`\'`).
+- `details` contains the publication year as free text e.g. "released on January 1, 2004" or "first edition on May 8, 2012". Extract year with: `CAST(SUBSTRING(details FROM 'released on [A-Za-z]+ \d+, (\d{4})') AS INTEGER)` or use `details LIKE '%2020%'` for year-only checks.
+- `details` contains language e.g. "written in English". Filter with: `details LIKE '%written in English%'`
+- `rating_number` is the count of ratings, NOT the average rating. Average rating must come from SQLite `review.rating`.
+- `book_id` format: `"bookid_N"` — joins to SQLite `review.purchase_id` = `"purchaseid_N"` (same integer N, different prefix).
+- PostgreSQL and SQLite are SEPARATE databases — you CANNOT join them in a single SQL query. Run each query independently and merge results in Python.
+
+### SQLite — Bookreview review_database (review_query.db)
+**Table: review** (~rows)
+| Field | Type | Sample Values |
+|-------|------|---------------|
+| purchase_id | TEXT | "purchaseid_186", "purchaseid_8" |
+| rating | INTEGER | 1–5 |
+| title | TEXT | review title string |
+| text | TEXT | free-form review text |
+| review_time | TEXT | ISO format "2012-11-24 18:52:00" — clean, use strftime('%Y', review_time) for year |
+| helpful_vote | INTEGER | 0, 1, 2 |
+| verified_purchase | INTEGER | 0 or 1 |
+
+**Critical join rule:**
+- PostgreSQL `books_info.book_id` = `"bookid_N"` ↔ SQLite `review.purchase_id` = `"purchaseid_N"`
+- Strip both prefixes, match on integer N. Direct string equality returns zero rows.
+- Join pattern: `CAST(REPLACE(b.book_id, 'bookid_', '') AS INTEGER) = CAST(REPLACE(r.purchase_id, 'purchaseid_', '') AS INTEGER)`
+- Or use LIKE: `b.book_id = 'bookid_' || REPLACE(r.purchase_id, 'purchaseid_', '')`
+- PostgreSQL and SQLite are SEPARATE databases — do NOT write a single SQL query that references both. Run each independently.
+- For apostrophes in string literals use doubled single quotes: `'Children''s Books'` — NEVER `\'`.
+
+**Decade extraction from details:**
+- Use REGEXP or SUBSTRING to extract 4-digit year from `details`, then compute decade: `(year / 10) * 10`
+- PostgreSQL: `CAST(SUBSTRING(details FROM '(\d{4})') AS INTEGER) / 10 * 10`
+
 ## Behavioral Rules
 1. Always produce a query trace — never return an answer without it
 2. Self-correct on execution failure — retry up to 3 times with diagnosis

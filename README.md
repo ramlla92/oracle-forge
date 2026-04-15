@@ -191,6 +191,9 @@ MONGO_PORT=27017
 MONGO_DB=yelp_db
 SQLITE_PATH=db/dab_sqlite.db
 DUCKDB_PATH=db/yelp_user.db
+# Bookreview dataset
+POSTGRES_DB_BOOKREVIEW=bookreview_db
+SQLITE_PATH_BOOKREVIEW=DataAgentBench/dataset/bookreview/review_query.db
 EOF
 
 # 3. Install dependencies
@@ -199,6 +202,22 @@ pip install -r requirements.txt
 # 4. Load DAB datasets
 git clone https://github.com/ucbepic/DataAgentBench.git
 cd DataAgentBench && bash setup/load_postgres.sh && cd ..
+
+# 4b. Load Bookreview dataset (PostgreSQL + SQLite)
+# PostgreSQL: books_database / bookreview_db with table books_info (~200 books)
+psql -U postgres -c "CREATE DATABASE bookreview_db;" 2>/dev/null || true
+psql -U postgres -d bookreview_db -c "\dt" | grep -q books_info || \
+  psql -U postgres -d bookreview_db -c "\i DataAgentBench/dataset/bookreview/books_schema.sql"
+psql -U postgres -d bookreview_db -c "\i DataAgentBench/dataset/bookreview/books_data.sql"
+
+# SQLite: review_database / review_query.db with table review (book reviews)
+sqlite3 DataAgentBench/dataset/bookreview/review_query.db ".tables" | grep -q review || \
+  sqlite3 DataAgentBench/dataset/bookreview/review_query.db < DataAgentBench/dataset/bookreview/review_schema.sql
+sqlite3 DataAgentBench/dataset/bookreview/review_query.db < DataAgentBench/dataset/bookreview/review_data.sql
+
+# Note: Update mcp/tools.yaml with actual paths:
+# - postgres_query: host=127.0.0.1, port=5432, database=bookreview_db
+# - sqlite_query: path=DataAgentBench/dataset/bookreview/review_query.db
 
 # 5. Start MCP server
 python mcp/mcp_server.py &
@@ -210,8 +229,13 @@ curl http://localhost:5000/v1/tools | python3 -m json.tool | grep name
 # 7. Run a single test query
 python eval/run_query.py --question "What is the average rating of businesses in Las Vegas?"
 
-# 8. Run full benchmark
+# 8. Run full benchmark 
+# 8a. Run Yelp benchmark
+
 python eval/run_benchmark.py --dataset yelp --trials 5
+
+# 8b. Run Bookreview benchmark
+python eval/run_benchmark.py --dataset bookreview --trials 3
 ```
 
 ---

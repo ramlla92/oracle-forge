@@ -55,8 +55,17 @@ class SelfCorrector:
 
     def get_fix_strategy(self, failure_type: str, error: str, schema: str) -> str:
         strategies = {
-            "syntax_error": f"Fix SQL/query syntax. Error: {error}",
-            "wrong_table": f"Check schema for correct table/collection names.\nSchema:\n{schema}",
+            "syntax_error": (
+                f"Fix SQL/query syntax. Error: {error}. "
+                "If the error is near an apostrophe (e.g. \"Children's\"), "
+                "use doubled single quotes in SQL: 'Children''s Books' — NEVER backslash escaping."
+            ),
+            "wrong_table": (
+                f"Check schema for correct table/collection names.\nSchema:\n{schema}\n"
+                "IMPORTANT: PostgreSQL and SQLite are separate databases — "
+                "do NOT write a single SQL query that references tables from both. "
+                "Query each database independently."
+            ),
             "join_key_format": (
                 "Normalize join key types (e.g., cast integer to varchar or vice versa)"
             ),

@@ -73,3 +73,10 @@ python eval/score.py --results eval/run_logs/benchmark_yelp_<timestamp>.json
 | 20260414_205611 | yelp | 6/7 | 86% |
 | 20260414_205915 | yelp | 7/7 | 100% |
 | 20260414_210933 | yelp | 7/7 | 100% |
+| 20260415_063051 | yelp | 7/7 | 100% |
+| 20260415_064930 | bookreview | 0/3 | 0% |
+| 20260415_071452 | bookreview | 1/3 | 33% |
+| 20260415_072246 | bookreview | 1/3 | 33% |
+| 20260415_072948 | bookreview | 1/3 | 33% |
+| 20260415_073956 | bookreview | 0/3 | 0% |
+| 20260415_074335 | bookreview | 1/3 | 33% |
