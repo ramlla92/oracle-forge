@@ -21,6 +21,17 @@
 | File | When to load |
 |---|---|
 | kb/domain/join_keys_glossary.md | Any query joining data across two databases |
+| kb/domain/yelp_join_contract.md | Any Yelp cross-database join — canonical businessid_N ↔ businessref_N contract with examples |
+
+---
+
+## Load When Query Is One of the 7 Yelp Benchmark Queries
+
+| File | When to load |
+|---|---|
+| kb/domain/yelp_field_map.md | Any Yelp query — source-of-truth for rating, state, categories, WiFi, parking, business name |
+| kb/domain/yelp_query_skeletons.md | Any of Q1–Q7 — DB path, stage goals, expected intermediate output shape |
+| kb/domain/yelp_antipatterns.md | Diagnosing a wrong Yelp answer or reviewing a generated query before execution |
 
 ---
 

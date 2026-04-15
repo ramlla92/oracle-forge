@@ -46,3 +46,14 @@ Reviewed at: every mob session
 - Every time a new join key mismatch is confirmed by inspection, add it to `join_keys_glossary.md`, update `utils/join_key_resolver.py FORMAT_REGISTRY`, and log here.
 - Every time a new domain term is discovered through a probe failure, add it to `domain_terms.md` and log here with the probe ID that surfaced it.
 - Every time a document is updated because a Driver found the existing entry was wrong, add an UPDATED row and note what was incorrect.
+
+---
+
+## 2026-04-14 (feat/kb-v2-yelp-domain — IO deliverable for Driver request)
+
+| Date | Document | Change Type | What Changed | Reason |
+|------|----------|-------------|--------------|--------|
+| 2026-04-14 | `yelp_field_map.md` | ADDED | New document. Source-of-truth field map for all Yelp query concepts: rating, review_count, state/city, categories, WiFi, parking, credit card, business name. Includes explicit anti-patterns per concept. Verified against live data. | Driver requested authoritative field map with anti-patterns before agent query generation. Addresses root cause of AP-01 (review_count used as rating) and AP-04 (DuckDB queried for location data). |
+| 2026-04-14 | `yelp_join_contract.md` | ADDED | New document. Canonical join key mapping (businessid_N ↔ businessref_N), normalization rules, good join vs bad join examples for both directions (MongoDB-first and DuckDB-first). | Driver requested join key contract with concrete examples. Replaces scattered join key notes across multiple files with a single authoritative reference. |
+| 2026-04-14 | `yelp_query_skeletons.md` | ADDED | New document. Per-query logic skeletons for Q1–Q7: required DB path, MongoDB stage goals, DuckDB aggregation goals, expected intermediate output shape. Logic descriptions only — not runnable code. All ground truths verified. | Driver requested per-query logic documentation so agent can verify its generated queries are on the right path. Addresses Q3 (missing ref filter), Q6 (DuckDB-first flow), Q7 (reverse lookup pattern). |
+| 2026-04-14 | `yelp_antipatterns.md` | ADDED | New document. 15-entry wrong-pattern → correct-pattern table covering: AP-01 (review_count as rating), AP-02/03 (state extraction), AP-04/05 (DuckDB table errors), AP-06 (missing ref filter), AP-07 (category from wrong field), AP-08 ($lookup), AP-09 (business_ref as answer), AP-10 (single strptime), AP-11–15 (additional patterns). Detailed explanations for high-impact patterns. | Driver requested compact anti-pattern table for recurring failures. Consolidates all observed failure modes from corrections_log.md COR-001 through COR-032 into actionable reference. |

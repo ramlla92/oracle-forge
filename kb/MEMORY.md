@@ -49,6 +49,10 @@ injection test before being committed.
 | `kb/domain/unstructured_fields_inventory.md` | Which fields require extraction before aggregation; extraction patterns | Any query involving free-text fields |
 | `kb/domain/domain_terms.md` | Correct definitions of business terms not in any schema (active, churn, high-rated, fiscal quarter) | Any query using a business term |
 | `kb/domain/domain_knowledge.md` | **Layer 2 context file loaded by ContextManager.** Consolidates: domain terms, MongoDB attribute parsing rules, description field parsing, date parsing rules, all 12 dataset DB type map, live join resolution note | Loaded automatically at every session start by ContextManager |
+| `kb/domain/yelp_field_map.md` | Source-of-truth field map for every Yelp concept: rating, review_count, state/city, categories, WiFi, parking, credit card, business name — with explicit anti-patterns per concept | Any Yelp query; before generating any query against Yelp data |
+| `kb/domain/yelp_join_contract.md` | Canonical join key mapping (businessid_N ↔ businessref_N), normalization rules, good join vs bad join examples for both directions | Any Yelp cross-database join |
+| `kb/domain/yelp_query_skeletons.md` | Per-query logic skeletons for Q1–Q7: required DB path, MongoDB stage goals, DuckDB aggregation goals, expected intermediate output shape | Any of the 7 Yelp benchmark queries |
+| `kb/domain/yelp_antipatterns.md` | 15-entry wrong-pattern → correct-pattern table for all recurring Yelp failure modes (AP-01 through AP-15) | Diagnosing a wrong Yelp answer or reviewing a generated query |
 
 ---
 
@@ -93,7 +97,7 @@ the relevant documents are loaded:
 | Subdirectory | Documents | Last injection test | Status |
 |-------------|-----------|--------------------| -------|
 | architecture | 8 | 2026-04-09 | ✅ All passing |
-| domain | 5 | 2026-04-11 | ✅ All passing (domain_knowledge.md added) |
+| domain | 9 | 2026-04-14 | ✅ All passing (yelp_field_map, yelp_join_contract, yelp_query_skeletons, yelp_antipatterns added) |
 | evaluation | 3 | 2026-04-08 | ✅ All passing |
 | corrections | 1 | 2026-04-08 | ✅ Active |
 

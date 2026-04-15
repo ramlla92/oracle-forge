@@ -275,3 +275,88 @@ Most common observed pattern: agent queries only one database and uses row exist
 **Fix applied:** (1) Multi-DB routing: `database_router.py` `requires_cross_db_merge()` detects queries combining "active customers" with "support" data and flags both PostgreSQL and MongoDB as required. (2) Domain gap: `domain_knowledge.md` "high-value customer" entry added as "top revenue decile for the dataset; if no fiscal definition exists in schema, agent must flag ambiguity in response rather than proceeding silently." Both fixes loaded as Layer 2 context.
 
 **Post-fix score:** pending — requires live benchmark run (compound probe — both sub-failures must be resolved for score of 1.0)
+
+---
+
+## Probe 016: review_count Used as Rating (AP-01)
+
+**Query:**
+> What is the average rating of businesses in Indianapolis, Indiana?
+
+**Failure category:** Domain knowledge gap
+
+**Expected failure:** Agent uses `AVG(review_count)` from MongoDB `business` collection instead of `AVG(rating)` from DuckDB `review` table. Returns a value like `45.2` instead of `3.547`. Passes numeric validation superficially but is wrong by an order of magnitude.
+
+**Observed failure:** MongoDB aggregation pipeline included `{"$avg": "$review_count"}` in a `$group` stage. Returned `45.2` — the average number of reviews per business, not the average star rating. DuckDB `review.rating` was never queried.
+
+**Fix applied:** AP-01 documented in `kb/domain/yelp_antipatterns.md`. `_validate_query_semantics()` in `agent_core.py` rejects any MongoDB pipeline containing `$avg: $review_count`. `nl_to_mongodb()` prompt explicitly states: "Do NOT compute ratings in MongoDB — return business_ids for DuckDB to compute AVG(rating)." See COR-002, COR-003.
+
+**Post-fix score:** pending — re-run Q1 after fix
+
+---
+
+## Probe 017: State Extracted via $indexOfBytes (AP-02/AP-03)
+
+**Query:**
+> Which U.S. state has the highest number of businesses that offer WiFi?
+
+**Failure category:** Ill-formatted join key mismatch *(unstructured text extraction)*
+
+**Expected failure:** Agent uses `$indexOfBytes` to find the first `", "` in the description and extracts 2 characters after it. For "9916 Clayton Rd in St. Louis, MO" the first `", "` is after "Rd" — returns "in" not "MO". State extraction is wrong for any city with a comma in the address.
+
+**Observed failure:** Agent generated `{"$substr": ["$description", {"$add": [{"$indexOfBytes": ["$description", ", "]}, 2]}, 2]}`. For "St. Louis, MO" businesses this returned `"in"` instead of `"MO"`. State grouping was corrupted — MO businesses appeared under `"in"` group. PA count was understated.
+
+**Fix applied:** AP-02 and AP-03 documented in `kb/domain/yelp_antipatterns.md`. Correct pattern documented in `kb/domain/yelp_field_map.md` (State section) and `agent/AGENT.md`: split on `", this"`, take last 2 chars of left part, wrap description with `$ifNull`. See COR-007 through COR-012.
+
+**Post-fix score:** pending — re-run Q2, Q5 after fix
+
+---
+
+## Probe 018: DuckDB Queried for Business Attributes (AP-04/AP-05)
+
+**Query:**
+> During 2018, how many businesses that received reviews offered either business parking or bike parking?
+
+**Failure category:** Multi-database routing failure
+
+**Expected failure:** Agent generates a DuckDB query joining `review` with a `business` table to filter by parking attributes. DuckDB has no `business` table. Query fails with `Catalog Error: Table with name business does not exist`.
+
+**Observed failure:** Agent generated `SELECT COUNT(DISTINCT r.business_ref) FROM review r INNER JOIN business b ON r.business_ref = b.business_id WHERE b.attributes LIKE '%BusinessParking%'`. Failed immediately — no `business` table in DuckDB. Self-corrector retried 3 times with variations of the same wrong pattern.
+
+**Fix applied:** AP-04 and AP-05 documented in `kb/domain/yelp_antipatterns.md`. `agent/AGENT.md` DuckDB schema section now starts with: "ONLY 3 TABLES EXIST: review, tip, user. There is NO business table." `_validate_duckdb_dates()` extended to also catch `business` table references. See COR-025, COR-027, COR-029, COR-031.
+
+**Post-fix score:** pending — re-run Q3 after fix
+
+---
+
+## Probe 019: Missing Ref Filter in DuckDB Cross-DB Query (AP-06)
+
+**Query:**
+> During 2018, how many businesses that received reviews offered either business parking or bike parking?
+
+**Failure category:** Multi-database routing failure
+
+**Expected failure:** MongoDB correctly returns 49 parking business_ids. DuckDB query runs but omits the `WHERE business_ref IN (parking refs)` filter. Counts all businesses with 2018 reviews (67) instead of only parking businesses (35). Answer is wrong but no error is raised — silent wrong answer.
+
+**Observed failure:** DuckDB query was `SELECT COUNT(DISTINCT business_ref) FROM review WHERE YEAR(...) = 2018` — no `business_ref IN (...)` filter. Returned 67. Correct answer is 35. MongoDB parking refs were extracted but not passed to DuckDB.
+
+**Fix applied:** AP-06 documented in `kb/domain/yelp_antipatterns.md`. `nl_to_sql_with_refs()` prompt in `prompt_library.py` now states: "ALWAYS include: WHERE business_ref IN (...) — this is the primary filter from MongoDB." `_generate_duckdb_with_refs()` enforces refs are passed. See COR-017, COR-027, COR-028.
+
+**Post-fix score:** pending — re-run Q3 after fix
+
+---
+
+## Probe 020: business_ref Returned as Final Answer (AP-09)
+
+**Query:**
+> Which business received the highest average rating between January 1, 2016 and June 30, 2016? Consider only businesses with at least 5 reviews.
+
+**Failure category:** Unstructured text extraction failure *(name resolution)*
+
+**Expected failure:** DuckDB correctly identifies `businessref_9` as the top-rated business. Agent returns `"businessref_9"` as the answer without doing the MongoDB reverse lookup for the human-readable name. Validate.py checks for `"Coffee House Too Cafe"` — fails.
+
+**Observed failure:** Agent answer was `"The business with the highest average rating is businessref_9 with an average rating of 4.375."` Validate.py returned `Missing name: Coffee House Too Cafe`. The reverse lookup step (businessref_9 → businessid_9 → MongoDB name query) was never executed.
+
+**Fix applied:** AP-09 documented in `kb/domain/yelp_antipatterns.md`. `kb/domain/yelp_field_map.md` Business Name section documents the 3-step resolution path. `kb/domain/yelp_query_skeletons.md` Q6 skeleton explicitly shows DuckDB-first then MongoDB name lookup. Synthesizer prompt updated to use `mongodb_lookup` results for name resolution.
+
+**Post-fix score:** pending — re-run Q6 after fix

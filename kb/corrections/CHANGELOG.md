@@ -37,3 +37,12 @@ Reviewed at: every mob session
 | Review Date | COR IDs Reviewed | Promoted | Destination | Notes |
 |-------------|-----------------|----------|-------------|-------|
 | 2026-04-08 | COR-001 | No | — | Single entry, pattern not yet established. Monitor for recurrence. |
+
+---
+
+## 2026-04-14 (feat/kb-v2-yelp-domain)
+
+| Date | Change Type | What Changed | Reason |
+|------|-------------|--------------|--------|
+| 2026-04-14 | PROMOTED | COR-002 through COR-032 patterns promoted to `kb/domain/yelp_antipatterns.md`. Four systemic patterns (A=code fences, B=pipeline as string, C=wrong table, D=date format) now have corresponding AP entries (AP-10, AP-05, AP-10, AP-10 respectively) with correct-pattern documentation. | 32 correction entries showed 4 recurring patterns. Promoted to domain KB so agent reads the fix at session start rather than only after failure. |
+| 2026-04-14 | BULK-REVIEW | Probes 016–020 added to `probes/probes.md` linking to AP-01, AP-02/03, AP-04/05, AP-06, AP-09 anti-patterns and referencing COR IDs. | Driver requested probe updates after anti-pattern table was complete. Each new probe documents the observed failure, links to the correction IDs that surfaced it, and references the fix in yelp_antipatterns.md. |

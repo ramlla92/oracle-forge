@@ -30,7 +30,8 @@ class AgentCore:
         system_context = self.ctx.get_full_context()
         prompt = self.prompts.intent_analysis(question, available_databases)
         text = llm_client.call(self.client, prompt, system=system_context, max_tokens=1024)
-        return json.loads(_strip_markdown(text))
+        intent = json.loads(_strip_markdown(text))
+        return _enforce_intent_db_coverage(question, available_databases, intent)
 
     def decompose_query(self, question: str, intent: dict) -> list[SubQuery]:
         """Break multi-DB intent into one SubQuery per target database."""
@@ -88,15 +89,31 @@ class AgentCore:
         schema = self.ctx.get_schema_for_db(db_type)
         system_context = self.ctx.get_full_context()
         if db_type == "mongodb":
-            prompt = self.prompts.nl_to_mongodb(question, schema)
+            base_prompt = self.prompts.nl_to_mongodb(question, schema)
         else:
-            prompt = self.prompts.nl_to_sql(question, schema, dialect=db_type)
+            base_prompt = self.prompts.nl_to_sql(question, schema, dialect=db_type)
 
-        raw = llm_client.call(self.client, prompt, system=system_context, max_tokens=512)
-        cleaned = _strip_markdown(raw)
-        if not _looks_like_query(cleaned, db_type):
-            raise ValueError(f"LLM returned non-query text for {db_type}: {cleaned[:120]}")
-        return cleaned
+        last_error = None
+        for attempt in range(3):
+            prompt = base_prompt
+            if attempt > 0 and last_error:
+                prompt += (
+                    f"\n\nPrevious attempt was rejected: {last_error}. "
+                    f"Fix the issue and return only a valid {db_type} query."
+                )
+            raw = llm_client.call(self.client, prompt, system=system_context, max_tokens=512)
+            cleaned = _strip_markdown(raw)
+            try:
+                if not _looks_like_query(cleaned, db_type):
+                    raise ValueError(f"LLM returned non-query text for {db_type}: {cleaned[:120]}")
+                _validate_query_semantics(question, db_type, cleaned)
+                return cleaned
+            except ValueError as exc:
+                last_error = exc
+                continue
+        raise ValueError(
+            f"Could not generate a valid {db_type} query after 3 attempts. Last error: {last_error}"
+        ) from last_error
 
     async def run(self, request: QueryRequest, query_executor=None) -> AgentResponse:
         """Main orchestration loop: analyze → decompose → execute → synthesize → log."""
@@ -478,12 +495,15 @@ class AgentCore:
                     "corrected_query": corrected,
                     "error": error_str,
                 })
-                self.ctx.append_correction(
-                    query=original_question,
-                    what_went_wrong=error_str,
-                    correct_approach=corrected,
-                    failure_category=failure_type,
-                )
+                try:
+                    self.ctx.append_correction(
+                        query=original_question,
+                        what_went_wrong=error_str,
+                        correct_approach=corrected,
+                        failure_category=failure_type,
+                    )
+                except OSError:
+                    pass  # never let corrections I/O crash a query
                 current_query = corrected
 
         return {"error": "max retries exceeded"}, corrections
@@ -508,12 +528,28 @@ class AgentCore:
         refs_sql = ", ".join(f"'{r}'" for r in business_refs)
         schema = self.ctx.get_schema_for_db("duckdb")
         system_context = self.ctx.get_full_context()
-        prompt = self.prompts.nl_to_sql_with_refs(question, schema, refs_sql)
-        raw = llm_client.call(self.client, prompt, system=system_context, max_tokens=512)
-        cleaned = _strip_markdown(raw)
-        if not _looks_like_query(cleaned, "duckdb"):
-            raise ValueError(f"LLM returned non-query text for duckdb: {cleaned[:120]}")
-        return cleaned
+        base_prompt = self.prompts.nl_to_sql_with_refs(question, schema, refs_sql)
+        last_error = None
+        for attempt in range(3):
+            prompt = base_prompt
+            if attempt > 0 and last_error:
+                prompt += (
+                    f"\n\nPrevious attempt was rejected: {last_error}. "
+                    "Fix the issue and return only a valid DuckDB SELECT query."
+                )
+            raw = llm_client.call(self.client, prompt, system=system_context, max_tokens=512)
+            cleaned = _strip_markdown(raw)
+            try:
+                if not _looks_like_query(cleaned, "duckdb"):
+                    raise ValueError(f"LLM returned non-query text for duckdb: {cleaned[:120]}")
+                _validate_query_semantics(question, "duckdb", cleaned)
+                return cleaned
+            except ValueError as exc:
+                last_error = exc
+                continue
+        raise ValueError(
+            f"Could not generate a valid duckdb query after 3 attempts. Last error: {last_error}"
+        ) from last_error
 
     def _call_mcp(self, db_type: str, query: str) -> dict:
         """Call the MCP server (Python replacement for toolbox binary) via QueryExecutor."""
