@@ -10,7 +10,7 @@
 
 | Date | Subreddit | Post Title | Our Comment Link | Comment Summary | Upvotes |
 |------|-----------|-----------|-----------------|-----------------|---------|
-| 2026-04-10 | r/MachineLearning | Enterprise data agents in production | [PLACEHOLDER — replace with actual comment link] | Substantive comment on context engineering for multi-database agents | TBD |
+| 2026-04-10 | r/MachineLearning | Enterprise data agents in production | — | Substantive comment on context engineering for multi-database agents | TBD |
 | 2026-04-11 | r/LocalLLaMA | DataAgentBench: frontier models score 38% on real data tasks | https://www.reddit.com/r/LocalLLaMA/comments/1sjh8fr/dataagentbench_frontier_models_score_38_on_real/ | Engaged with post on DAB benchmark methodology and our multi-DB approach | TBD |
 | 2026-04-11 | r/MachineLearning | Frameworks for supporting LLM agentic benchmarking | https://www.reddit.com/r/MachineLearning/comments/1sjnha5/frameworks_for_supporting_llmagentic_benchmarking/ | Comment on pass@k limitations and systematic failure modes | TBD |
 
@@ -20,7 +20,7 @@
 
 | Date | Server | Channel | Our Comment Link | Comment Summary |
 |------|--------|---------|-----------------|-----------------|
-| — | [PLACEHOLDER — replace with Discord server name] | [PLACEHOLDER — replace with channel] | [PLACEHOLDER — replace with message link] | [PLACEHOLDER — replace with summary] |
+| — | — | — | — | — |
 
 ---
 
@@ -36,6 +36,6 @@
 
 ## Summary
 
-**Total Reddit comments:** 3 (1 placeholder, 2 live)
-**Total Discord comments:** 1 (placeholder)
-**Total X replies:** 2
+**Total Reddit comments:** 2
+**Total Discord comments:** 0
+**Total X replies:** 3

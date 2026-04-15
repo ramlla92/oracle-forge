@@ -42,7 +42,7 @@ Apr 11 | https://x.com/melakuG21193/status/2043604628030226886 | Claude Code 3-l
 
 | Resource | Application Date | Outcome | Instructions for Team |
 |----------|-----------------|---------|----------------------|
-| Cloudflare Workers free tier | 2026-04-07 | [PLACEHOLDER — replace with outcome] | [PLACEHOLDER — add access instructions once obtained] |
+| Cloudflare Workers free tier | 2026-04-07 | — | — |
 | API credits (list any applied for) | — | — | — |
 
 
@@ -52,10 +52,10 @@ Apr 11 | https://x.com/melakuG21193/status/2043604628030226886 | Claude Code 3-l
 
 | Date | Platform | Type | Title / Description | Link | Reach (if available) | Notable Responses |
 |------|----------|------|--------------------|----|----------------------|-------------------|
-| 2026-04-14 | X (Twitter) | Thread | Benchmark submission thread — setup process, first scores, what the evaluation harness measures | [PLACEHOLDER — replace with actual X link] | — | — |
-| 2026-04-15 | LinkedIn / Medium | Article | Signal Corps member 1 article (600–1000 words, one specific thing learned) | [PLACEHOLDER — replace with actual article link] | — | — |
-| 2026-04-15 | LinkedIn / Medium | Article | Signal Corps member 2 article (600–1000 words, one failure understood) | [PLACEHOLDER — replace with actual article link] | — | — |
-| 2026-04-17 | X (Twitter) | Thread | Final community thread — benchmark results, DAB leaderboard reference, DAB PR link | [PLACEHOLDER — replace with actual X link] | — | — |
+| 2026-04-14 | X (Twitter) | Thread | Benchmark submission thread — setup process, first scores, what the evaluation harness measures | — | — | — |
+| 2026-04-15 | LinkedIn / Medium | Article | Signal Corps member 1 article (600–1000 words, one specific thing learned) | — | — | — |
+| 2026-04-15 | LinkedIn / Medium | Article | Signal Corps member 2 article (600–1000 words, one failure understood) | — | — | — |
+| 2026-04-17 | X (Twitter) | Thread | Final community thread — benchmark results, DAB leaderboard reference, DAB PR link | — | — | — |
 
 ### Community Intelligence
 
