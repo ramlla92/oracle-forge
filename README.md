@@ -2,7 +2,7 @@
 
 **The Oracle Forge of Data Agent** | TRP1 FDE Programme | Week 8–9 | April 2026
 
-**Live agent (shared server):** `http://10.0.8.247`
+**Live agent (shared server):** `http://<VPS_IP>:8000` — update with actual IP before submission
 
 ---
 
@@ -168,16 +168,11 @@ Full run history in [`eval/score_log.md`](eval/score_log.md).
 
 ---
 
-## Benchmark Results
-
-| Dataset | Queries | Passed | pass@1 | Run date |
-|---------|---------|--------|--------|----------|
-| yelp | 7 | 6 | 85.7% | 2026-04-15 |
-| bookreview | 3 | 3 | 100.0% | 2026-04-15 |
+## Benchmark
 
 - Dataset: [UC Berkeley DataAgentBench](https://github.com/ucbepic/DataAgentBench) — 54 queries, 12 datasets, 4 DB types
 - Current SOTA: PromptQL + Gemini at 54.3% pass@1
-- Evaluation: `python eval/run_benchmark.py --dataset yelp --trials 1`
+- Evaluation: `python eval/run_benchmark.py --dataset yelp --trials 5`
 
 ---
 
