@@ -85,7 +85,7 @@ class QueryExecutor:
                 collection = "business"
                 print(
                     "WARNING: MongoDB pipeline parse error, "
-                    f"defaulting to 'business'. Query prefix: {str(sub_query.query)[:80]}",
+                    f"defaulting to 'business'. Query prefix: {sub_query.query[:80]}",
                     flush=True,
                 )
             serialized = pipeline if isinstance(pipeline, str) else json.dumps(pipeline)

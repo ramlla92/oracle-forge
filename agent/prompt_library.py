@@ -187,13 +187,14 @@ Fix the query. Return only the corrected query, no explanation."""
         for k, v in merged_results.items():
             if k == "category_aggregation":
                 continue
-            if k == "mongodb" and isinstance(v, list) and cat_agg:
-                continue  # raw docs not needed — category_aggregation already summarises them
-            if k == "mongodb" and isinstance(v, list) and len(v) > 100:
-                truncated_results[k] = v[:100]
-                truncated_results["mongodb_note"] = f"(showing 100 of {len(v)} docs)"
-            else:
-                truncated_results[k] = v
+            if k == "mongodb" and isinstance(v, list):
+                if cat_agg:
+                    continue  # raw docs not needed — category_aggregation already summarises them
+                if len(v) > 100:
+                    truncated_results[k] = v[:100]
+                    truncated_results["mongodb_note"] = f"(showing 100 of {len(v)} docs)"
+                    continue
+            truncated_results[k] = v
 
         # Always show DuckDB result separately to ensure it's not cut off
         duck_result = merged_results.get("duckdb")

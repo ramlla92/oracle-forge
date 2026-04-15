@@ -87,6 +87,7 @@ class AgentCore:
         merge_operations: list[str] = []
 
         intent = self.analyze_intent(request.question, request.available_databases)
+        is_category_q = intent.get("is_category_question", False)
         sub_queries = self.decompose_query(request.question, intent)
 
         mongo_sq = next((sq for sq in sub_queries if sq.database_type == "mongodb"), None)
@@ -126,7 +127,7 @@ class AgentCore:
 
             # If this is a category-ranking question, remove any LIMIT from the DuckDB query
             # so we get ALL business_refs (category aggregation needs all, not just top N).
-            if intent.get("is_category_question", False):
+            if is_category_q:
                 duck_sq = SubQuery(
                     database_type=duck_sq.database_type,
                     query=_remove_limit_clause(duck_sq.query),
@@ -174,7 +175,7 @@ class AgentCore:
             self_corrections.extend(mongo_corr)
 
             # For category-ranking questions, use Python extraction instead of MongoDB grouping
-            if intent.get("is_category_question", False):
+            if is_category_q:
                 cat_refs, top_cat_name, top_cat_count = _compute_top_category_refs(mongo_result)
                 if cat_refs:
                     business_refs = cat_refs
@@ -505,7 +506,6 @@ _CAT_EXTRACT_PATTERNS = [
     r'eatery specializes in ([^.]+),',
     r'specializes in ([^.]+)\.',
     r'for ([^,]+(?:, [^,]+)*), perfect for',
-    # Primary description format: "this [type] offers [Category1], [Category2]."
     # Capital-letter guard avoids matching "offers a great selection of..." prose
     r'offers ([A-Z][^.]+)\.',
     # Generic connectors (reliable and common — placed before optional connectors)
