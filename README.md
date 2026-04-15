@@ -238,9 +238,64 @@ python eval/run_benchmark.py --dataset yelp --trials 5
 python eval/run_benchmark.py --dataset bookreview --trials 3
 ```
 
+## Running a Different Dataset (Bookreview Example)
+
+The agent supports multiple DAB datasets. Here's how to switch to `bookreview` (PostgreSQL + SQLite).
+
+### 1. Update `.env`
+
+```bash
+# Switch PostgreSQL to bookreview_db
+POSTGRES_DB=bookreview_db
+
+# Point SQLite to the bookreview review database
+SQLITE_PATH=/absolute/path/to/oracle-forge/DataAgentBench/query_bookreview/query_dataset/review_query.db
+```
+
+### 2. Load the bookreview PostgreSQL database (one-time)
+
+```bash
+# Create the database (run as postgres superuser)
+sudo -u postgres psql -c "CREATE DATABASE bookreview_db OWNER oracle_forge;"
+
+# Load the schema and data
+PGPASSWORD=<your_password> psql -h 127.0.0.1 -U oracle_forge -d bookreview_db \
+  -f DataAgentBench/query_bookreview/query_dataset/books_info.sql
+```
+
+The SQLite file (`review_query.db`) is already included in the DataAgentBench clone — no extra loading needed.
+
+### 3. Restart the MCP server
+
+```bash
+# Kill any running instance
+fuser -k 5000/tcp
+
+# Restart with updated .env
+set -a && source .env && set +a
+uvicorn mcp.mcp_server:app --port 5000
+```
+
+### 4. Run the benchmark
+
+```bash
+python eval/run_benchmark.py --dataset bookreview --trials 3
+```
+
+### Switching back to Yelp
+
+```bash
+# In .env, restore:
+POSTGRES_DB=yelp
+SQLITE_PATH=/absolute/path/to/oracle-forge/DataAgentBench/query_yelp/query_dataset/yelp_user.db
+# (or leave SQLITE_PATH pointing to data/dab_sqlite.db if not using Yelp SQLite)
+```
+
+Then restart the MCP server.
+
 ---
 
-## Utilities
+
 
 | Module | What it does |
 |--------|-------------|
