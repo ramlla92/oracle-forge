@@ -8,12 +8,13 @@ MCP_BASE_URL = "http://localhost:5000"
 
 # Maps DB type to MCP tool name (must match toolbox.runtime.yaml exactly)
 DB_TYPE_TO_TOOL = {
-    "mongodb":               "mongo_aggregate",
-    "duckdb":                "duckdb_query",
-    "postgresql":            "postgres_query",
-    "postgresql_bookreview": "bookreview_query",
-    "postgresql_crm":        "crm_support_query",
-    "sqlite":                "sqlite_query",
+    "mongodb":                 "mongo_aggregate",
+    "duckdb":                  "duckdb_query",
+    "postgresql":              "postgres_query",
+    "postgresql_bookreview":   "bookreview_query",
+    "postgresql_crm":          "crm_support_query",
+    "postgresql_pancancer":    "pancancer_clinical_query",
+    "sqlite":                  "sqlite_query",
 }
 
 _rpc_id = 0

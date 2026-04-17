@@ -40,9 +40,18 @@ DEPS_DEV_DB_MAP = {
     "project_database": ("duckdb", DEPS_DEV_DUCKDB_PATH),
 }
 
+# PANCANCER_ATLAS db_paths
+PANCANCER_MOLECULAR_PATH = str(_DAB_ROOT / "query_PANCANCER_ATLAS/query_dataset/pancancer_molecular.db")
+
+PANCANCER_DB_MAP = {
+    "clinical_database":  ("postgresql_pancancer", None),   # PostgreSQL — uses PANCANCER_POSTGRES_DB env var
+    "molecular_database": ("duckdb", PANCANCER_MOLECULAR_PATH),
+}
+
 DATASET_REGISTRY = {
-    "crmarenapro": CRM_DB_MAP,
-    "DEPS_DEV_V1": DEPS_DEV_DB_MAP,
+    "crmarenapro":    CRM_DB_MAP,
+    "DEPS_DEV_V1":    DEPS_DEV_DB_MAP,
+    "PANCANCER_ATLAS": PANCANCER_DB_MAP,
 }
 
 
@@ -220,6 +229,9 @@ class AgentCore:
                     "territory": {"territory2", "userterritory2association"},
                     "package_database": {"packageinfo"},
                     "project_database": {"project_packageversion", "project_info"},
+                    # PANCANCER_ATLAS
+                    "clinical_database":  {"clinical_info"},
+                    "molecular_database": {"mutation_data", "rnaseq_expression"},
                 }.get(logical_name, set())
                 forbidden_in_query = {"review", "business", "tip", "checkin"} - allowed_tables
                 q_lower = new_query.lower()
@@ -311,6 +323,9 @@ class AgentCore:
                     # DEPS_DEV_V1
                     "package_database": {"packageinfo"},
                     "project_database": {"project_packageversion", "project_info"},
+                    # PANCANCER_ATLAS
+                    "clinical_database":  {"clinical_info"},
+                    "molecular_database": {"mutation_data", "rnaseq_expression"},
                 }
                 allowed = logical_tables.get(logical_name, set())
                 q_lower = cleaned.lower()

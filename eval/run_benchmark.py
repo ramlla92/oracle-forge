@@ -70,12 +70,13 @@ CORRECTIONS = "kb/corrections/corrections_log.md"
 DOMAIN_KB   = "kb/domain/domain_terms.md"
 
 DATASET_DBS = {
-    "yelp":         ["mongodb", "duckdb"],
-    "bookreview":   ["postgresql_bookreview", "sqlite"],
-    "googlelocal":  ["postgresql", "sqlite"],
-    "agnews":       ["mongodb", "sqlite"],
-    "crmarenapro":  ["core_crm", "sales_pipeline", "support", "products_orders", "activities", "territory"],
-    "DEPS_DEV_V1":  ["package_database", "project_database"],
+    "yelp":           ["mongodb", "duckdb"],
+    "bookreview":     ["postgresql_bookreview", "sqlite"],
+    "googlelocal":    ["postgresql", "sqlite"],
+    "agnews":         ["mongodb", "sqlite"],
+    "crmarenapro":    ["core_crm", "sales_pipeline", "support", "products_orders", "activities", "territory"],
+    "DEPS_DEV_V1":    ["package_database", "project_database"],
+    "PANCANCER_ATLAS": ["clinical_database", "molecular_database"],
 }
 
 

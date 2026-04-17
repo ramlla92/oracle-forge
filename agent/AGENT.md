@@ -310,6 +310,70 @@ ORDER BY pn.stars DESC LIMIT 10;  -- use 10 to cover duplicates/edge cases for "
 - For "top 5" questions: use LIMIT 10 in DuckDB so the LLM can select the actual top 5 — some packages share the same GitHub project
 - NEVER filter `RelationType='release'` — use SQLite VersionInfo for release status
 
+### PostgreSQL — PanCancer Atlas clinical_database (pancancer_clinical)
+**Table: clinical_info** (~10,000+ rows — one row per patient)
+| Field | Type | Notes |
+|-------|------|-------|
+| bcr_patient_barcode | text | Patient identifier (e.g. "TCGA-02-0001") — primary key |
+| acronym | text | Cancer type acronym (e.g. "GBM", "BRCA", "LUAD") |
+| gender | text | "MALE" or "FEMALE" |
+| age_at_initial_pathologic_diagnosis | integer | Patient age at diagnosis |
+| vital_status | text | "Alive" or "Dead" |
+| days_to_death | integer | Days from diagnosis to death (NULL if alive) |
+| days_to_last_followup | integer | Days from diagnosis to last follow-up |
+| tumor_stage | text | Pathologic tumor stage (e.g. "Stage I", "Stage IV") |
+| histological_type | text | Histological classification of the tumor |
+| race | text | Patient race |
+| ethnicity | text | Patient ethnicity |
+| (100+ additional clinical annotation columns) | various | Use SELECT * or inspect schema for full list |
+
+**Critical rules:**
+- `bcr_patient_barcode` is the join key to `molecular_database` tables (`ParticipantBarcode`).
+- `acronym` identifies cancer type — always use exact uppercase match (e.g. `acronym = 'BRCA'`).
+- `vital_status` values are `'Alive'` and `'Dead'` — case-sensitive in PostgreSQL.
+- For survival analysis: use `days_to_death` for deceased patients, `days_to_last_followup` for alive patients.
+- PostgreSQL and DuckDB are SEPARATE databases — do NOT write a single SQL query referencing both. Run each independently and merge in Python.
+- `age_at_initial_pathologic_diagnosis` may be NULL for some patients — use `WHERE age_at_initial_pathologic_diagnosis IS NOT NULL` when computing averages.
+
+### DuckDB — PanCancer Atlas molecular_database (pancancer_molecular.db)
+**DAB root:** `DataAgentBench/query_PANCANCER_ATLAS/query_dataset/`
+
+**Table: Mutation_Data**
+| Field | Type | Notes |
+|-------|------|-------|
+| ParticipantBarcode | VARCHAR | Patient identifier — joins to PostgreSQL `clinical_info.bcr_patient_barcode` |
+| Tumor_SampleBarcode | VARCHAR | Tumor sample identifier |
+| Tumor_AliquotBarcode | VARCHAR | Tumor aliquot identifier |
+| Normal_SampleBarcode | VARCHAR | Normal control sample identifier |
+| Normal_AliquotBarcode | VARCHAR | Normal control aliquot identifier |
+| Normal_SampleTypeLetterCode | VARCHAR | Sample type abbreviation for normal sample |
+| Hugo_Symbol | VARCHAR | Gene symbol (e.g. "TP53", "CDH1", "KRAS") |
+| HGVSp_Short | VARCHAR | Protein-level mutation annotation (e.g. "p.R175H") |
+| Variant_Classification | VARCHAR | Mutation type: "Missense_Mutation", "Nonsense_Mutation", "Frame_Shift_Del", etc. |
+| HGVSc | VARCHAR | Coding DNA sequence mutation annotation |
+| CENTERS | VARCHAR | Contributing sequencing center |
+| FILTER | VARCHAR | Mutation filter status — use `FILTER = 'PASS'` for high-confidence calls |
+
+**Table: RNASeq_Expression**
+| Field | Type | Notes |
+|-------|------|-------|
+| ParticipantBarcode | VARCHAR | Patient identifier — joins to PostgreSQL `clinical_info.bcr_patient_barcode` |
+| SampleBarcode | VARCHAR | Sample identifier |
+| AliquotBarcode | VARCHAR | Aliquot identifier |
+| SampleTypeLetterCode | VARCHAR | Sample type abbreviation |
+| SampleType | VARCHAR | Sample type description (e.g. "Primary Tumor") |
+| Symbol | VARCHAR | Gene symbol |
+| Entrez | VARCHAR | Entrez gene ID |
+| normalized_count | DOUBLE | Normalized RNA expression value |
+
+**Critical rules:**
+- `ParticipantBarcode` in DuckDB joins to `bcr_patient_barcode` in PostgreSQL — values are the same format (e.g. "TCGA-02-0001").
+- For mutation frequency: use `FILTER = 'PASS'` to restrict to high-confidence mutations.
+- For gene-level queries: filter on `Hugo_Symbol` (exact uppercase match, e.g. `Hugo_Symbol = 'TP53'`).
+- For expression queries: `normalized_count` is a continuous float — use AVG/MAX/MIN for aggregation.
+- Cross-DB join pattern: query DuckDB for barcodes matching molecular criteria, then pass as IN-list to PostgreSQL clinical query (or vice versa).
+- DuckDB and PostgreSQL are SEPARATE databases — never write a single SQL query referencing both.
+
 ## Behavioral Rules
 1. Always produce a query trace — never return an answer without it
 2. Self-correct on execution failure — retry up to 3 times with diagnosis

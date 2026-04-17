@@ -434,6 +434,46 @@ The agent automatically resolves the 6 logical DB names (`core_crm`, `sales_pipe
 
 ---
 
+## Running the PANCANCER_ATLAS Dataset
+
+PANCANCER_ATLAS uses PostgreSQL (clinical data) + DuckDB (molecular/genomic data).
+
+### 1. Add to `.env`
+
+```bash
+PANCANCER_POSTGRES_DB=pancancer_clinical
+```
+
+### 2. Load the clinical PostgreSQL database (one-time)
+
+```bash
+sudo -u postgres psql -c "CREATE DATABASE pancancer_clinical OWNER oracle_forge;"
+PGPASSWORD=<your_password> psql -h 127.0.0.1 -U oracle_forge -d pancancer_clinical \
+  -f DataAgentBench/query_PANCANCER_ATLAS/query_dataset/pancancer_clinical.sql
+```
+
+### 3. Download the molecular DuckDB file (one-time, ~280MB via Git LFS)
+
+```bash
+cd DataAgentBench && git lfs pull --include="query_PANCANCER_ATLAS/query_dataset/pancancer_molecular.db"
+```
+
+### 4. Restart the MCP server
+
+```bash
+fuser -k 5000/tcp
+source .venv/bin/activate && uvicorn mcp.mcp_server:app --host 127.0.0.1 --port 5000
+```
+
+### 5. Run the benchmark
+
+```bash
+export PYTHONPATH=.:DataAgentBench
+python eval/run_benchmark.py --dataset PANCANCER_ATLAS --trials 1
+```
+
+---
+
 
 
 | Module | What it does |

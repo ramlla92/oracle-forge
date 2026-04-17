@@ -81,6 +81,9 @@ class ContextManager:
             # DEPS_DEV_V1 logical DB names
             "package_database":      "### SQLite — deps_dev package_database",
             "project_database":      "### DuckDB — deps_dev project_database",
+            # PANCANCER_ATLAS logical DB names
+            "clinical_database":     "### PostgreSQL — PanCancer Atlas clinical_database",
+            "molecular_database":    "### DuckDB — PanCancer Atlas molecular_database",
         }
         heading = heading_map.get(db_type)
         if not heading:
@@ -100,7 +103,8 @@ class ContextManager:
         For datasets where each logical DB has its own AGENT.md section (DEPS_DEV_V1),
         returns that full section. For CRM (all share one section), filters to the relevant tables.
         """
-        deps_logical = {"package_database", "project_database"}
+        deps_logical = {"package_database", "project_database",
+                        "clinical_database", "molecular_database"}
         if logical_name in deps_logical:
             return self.get_schema_for_db(logical_name)
 

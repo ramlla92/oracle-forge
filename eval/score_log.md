@@ -139,3 +139,5 @@ python eval/score.py --results eval/run_logs/benchmark_yelp_<timestamp>.json
 | 20260417_154922 | DEPS_DEV_V1 | 0/2 | 0% | query-pass@1 | — |
 | 20260417_155334 | DEPS_DEV_V1 | 0/2 | 0% | query-pass@1 | — |
 | 20260417_155507 | DEPS_DEV_V1 | 1/2 | 50% | query-pass@1 | — |
+| 20260417_180242 | PANCANCER_ATLAS | 0/3 | 0% | query-pass@1 | — |
+| 20260417_180736 | PANCANCER_ATLAS | 0/3 | 0% | query-pass@1 | — |
