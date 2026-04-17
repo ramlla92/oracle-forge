@@ -30,7 +30,61 @@ CRM_DB_MAP = {
     "activities":     ("duckdb", CRM_ACTIVITIES_PATH),
     "territory":      ("sqlite", CRM_TERRITORY_PATH),
 }
+# Map logical DB name → (db_type, db_path) for GITHUB_REPOS
+def _get_github_repos_db_map():
+    return {
+        "metadata_database": ("sqlite", os.getenv("SQLITE_GITHUB_PATH", "")),
+        "artifacts_database": ("duckdb", os.getenv("DUCKDB_GITHUB_PATH", "")),
+    }
 
+
+
+
+def _enforce_intent_db_coverage(question: str, available_databases: list, intent: dict) -> dict:
+    """Ensure intent includes all available databases when the question likely needs them.
+    Prevents the LLM from dropping a required database from target_databases."""
+    target = intent.get('target_databases', [])
+    # If LLM returned empty or single DB but multiple are available, include all
+    if len(available_databases) > 1 and len(target) < 1:
+        intent['target_databases'] = available_databases
+        intent['requires_join'] = True
+    # Ensure all available DBs are in target if question seems to need cross-DB join
+    join_keywords = ['most', 'top', 'highest', 'proportion', 'count', 'how many', 'which']
+    q_lower = question.lower()
+    if any(kw in q_lower for kw in join_keywords) and len(available_databases) > 1:
+        for db in available_databases:
+            if db not in target:
+                target.append(db)
+        intent['target_databases'] = target
+        intent['requires_join'] = len(target) > 1
+    return intent
+
+
+def _validate_query_semantics(question: str, db_type: str, query: str) -> None:
+    """Perform semantic validation on a generated query.
+    Raises ValueError if the query has obvious semantic problems.
+    Passes silently if the query looks correct.
+    """
+    q = query.strip().lower()
+
+    # Check for SELECT NULL fallback — agent gave up
+    if q.startswith('select null'):
+        raise ValueError(f"Query is a SELECT NULL fallback — LLM could not generate a real query")
+
+    # Check for suspiciously short queries
+    if len(q) < 10:
+        raise ValueError(f"Query too short to be valid: {query[:50]}")
+
+    # DuckDB-specific: warn if trying to access business table (does not exist in DuckDB)
+    if db_type == 'duckdb' and 'from business' in q:
+        raise ValueError("DuckDB has no business table — route business queries to MongoDB")
+
+    # SQLite-specific: check for DuckDB-only syntax
+    if db_type == 'sqlite' and 'try_strptime' in q:
+        raise ValueError("TRY_STRPTIME is DuckDB syntax, not valid in SQLite")
+
+    # All checks passed — query is semantically valid
+    return
 
 class AgentCore:
 
@@ -55,7 +109,9 @@ class AgentCore:
         """Break multi-DB intent into one SubQuery per target database."""
         requires_join = intent.get("requires_join", False)
         join_direction = intent.get("join_direction", "mongodb_first")
-        registry = CRM_DB_MAP if dataset == "crmarenapro" else {}
+        registry = (CRM_DB_MAP if dataset == "crmarenapro"
+               else _get_github_repos_db_map() if dataset.upper() == "GITHUB_REPOS"
+               else {})
         sub_queries = []
 
         for db_name in intent.get("target_databases", []):
@@ -141,7 +197,9 @@ class AgentCore:
         """
         corrections = []
         merges = []
-        registry = CRM_DB_MAP if dataset == "crmarenapro" else {}
+        registry = (CRM_DB_MAP if dataset == "crmarenapro"
+               else _get_github_repos_db_map() if dataset.upper() == "GITHUB_REPOS"
+               else {})
 
         # Collect successful results (non-error, non-empty)
         good_results = {
@@ -622,7 +680,7 @@ class AgentCore:
                     isinstance(v, dict) and "error" in v
                     for v in raw_results.values()
                 )
-                if dataset in ("crmarenapro",) and has_errors:
+                if dataset in ("crmarenapro", "GITHUB_REPOS") and has_errors:
                     raw_results, extra_corrections, extra_merges = self._crm_second_pass(
                         request.question, sub_queries, raw_results, dataset
                     )
@@ -798,7 +856,9 @@ def _enforce_intent_db_coverage(question: str, available_databases: list[str], i
 
     # Resolve logical names for datasets in the registry
     if dataset and bool(CRM_DB_MAP if dataset == "crmarenapro" else {}):
-        registry = CRM_DB_MAP if dataset == "crmarenapro" else {}
+        registry = (CRM_DB_MAP if dataset == "crmarenapro"
+               else _get_github_repos_db_map() if dataset.upper() == "GITHUB_REPOS"
+               else {})
         resolved = []
         for name in target:
             if name in registry:

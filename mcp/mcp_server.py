@@ -24,12 +24,9 @@ import duckdb
 import psycopg2
 import psycopg2.extras
 from bson import ObjectId
-from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Path
 from fastapi.responses import JSONResponse
 from pymongo import MongoClient
-
-load_dotenv()
 
 # ---------------------------------------------------------------------------
 # Config from environment (loaded via source .env before starting)
@@ -48,7 +45,6 @@ SQLITE_PATH = os.getenv("SQLITE_PATH", "db/dab_sqlite.db")
 DUCKDB_PATH = os.getenv("DUCKDB_PATH", "db/yelp_user.db")
 
 BOOKREVIEW_POSTGRES_DB   = os.getenv("BOOKREVIEW_POSTGRES_DB", "bookreview")
-CRM_SUPPORT_POSTGRES_DB  = os.getenv("CRM_SUPPORT_POSTGRES_DB", "crm_support")
 
 # Module-level MongoDB client — connection pool shared across all requests
 _mongo_client: Optional[MongoClient] = None
@@ -81,22 +77,17 @@ TOOLS = [
     },
     {
         "name": "sqlite_query",
-        "description": "Executes SQL against a SQLite database. Defaults to the DAB SQLite database unless db_path is specified.",
-        "parameters": {"sql": {"type": "string"}, "db_path": {"type": "string"}},
+        "description": "Executes SQL against the DAB SQLite database.",
+        "parameters": {"sql": {"type": "string"}},
     },
     {
         "name": "duckdb_query",
-        "description": "Executes analytical SQL against a DuckDB database. Defaults to the DAB DuckDB database unless db_path is specified.",
-        "parameters": {"sql": {"type": "string"}, "db_path": {"type": "string"}},
+        "description": "Executes analytical SQL against the DAB DuckDB database.",
+        "parameters": {"sql": {"type": "string"}},
     },
     {
         "name": "bookreview_query",
         "description": "Executes SQL against the PostgreSQL Bookreview books database.",
-        "parameters": {"sql": {"type": "string"}},
-    },
-    {
-        "name": "crm_support_query",
-        "description": "Executes SQL against the PostgreSQL CRM Support database.",
         "parameters": {"sql": {"type": "string"}},
     },
     {
@@ -203,14 +194,13 @@ def _rpc_error(req_id: Any, code: int, message: str) -> dict:
 
 def _dispatch(tool_name: str, params: dict) -> Any:
     handlers = {
-        "postgres_query":    _postgres_query,
-        "bookreview_query":  _bookreview_query,
-        "crm_support_query": _crm_support_query,
-        "mongo_aggregate":   _mongo_aggregate,
-        "mongo_find":        _mongo_find,
-        "sqlite_query":      _sqlite_query,
-        "duckdb_query":      _duckdb_query,
-        "cross_db_merge":    _cross_db_merge,
+        "postgres_query":   _postgres_query,
+        "bookreview_query": _bookreview_query,
+        "mongo_aggregate":  _mongo_aggregate,
+        "mongo_find":       _mongo_find,
+        "sqlite_query":     _sqlite_query,
+        "duckdb_query":     _duckdb_query,
+        "cross_db_merge":   _cross_db_merge,
     }
     fn = handlers.get(tool_name)
     if fn is None:
@@ -256,23 +246,6 @@ def _bookreview_query(params: dict) -> list[dict]:
         conn.close()
 
 
-def _crm_support_query(params: dict) -> list[dict]:
-    sql = params.get("sql", "")
-    if not sql:
-        raise ValueError("Parameter 'sql' is required")
-    conn = psycopg2.connect(
-        host=POSTGRES_HOST, port=POSTGRES_PORT,
-        dbname=CRM_SUPPORT_POSTGRES_DB, user=POSTGRES_USER, password=POSTGRES_PASS,
-        cursor_factory=psycopg2.extras.RealDictCursor,
-    )
-    try:
-        cur = conn.cursor()
-        cur.execute(sql)
-        return [dict(r) for r in cur.fetchall()]
-    finally:
-        conn.close()
-
-
 def _mongo_aggregate(params: dict) -> list[dict]:
     collection = params.get("collection", "")
     if not collection:
@@ -296,8 +269,7 @@ def _sqlite_query(params: dict) -> list[dict]:
     sql = params.get("sql", "")
     if not sql:
         raise ValueError("Parameter 'sql' is required")
-    db_path = params.get("db_path") or SQLITE_PATH
-    conn = sqlite3.connect(db_path)
+    conn = sqlite3.connect(params.get("db_path", SQLITE_PATH))
     conn.row_factory = sqlite3.Row
     try:
         cur = conn.cursor()
@@ -311,8 +283,7 @@ def _duckdb_query(params: dict) -> list[dict]:
     sql = params.get("sql", "")
     if not sql:
         raise ValueError("Parameter 'sql' is required")
-    db_path = params.get("db_path") or DUCKDB_PATH
-    conn = duckdb.connect(db_path, read_only=True)
+    conn = duckdb.connect(params.get("db_path", DUCKDB_PATH), read_only=True)
     try:
         result = conn.execute(sql)
         cols = [d[0] for d in result.description]

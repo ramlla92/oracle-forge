@@ -1,10 +1,11 @@
+import os
 import json
 
 import httpx
 
 from agent.models import SubQuery
 
-MCP_BASE_URL = "http://localhost:5000"
+MCP_BASE_URL = "http://localhost:5001"
 
 # Maps DB type to MCP tool name (must match toolbox.runtime.yaml exactly)
 DB_TYPE_TO_TOOL = {
@@ -12,8 +13,9 @@ DB_TYPE_TO_TOOL = {
     "duckdb":                "duckdb_query",
     "postgresql":            "postgres_query",
     "postgresql_bookreview": "bookreview_query",
-    "postgresql_crm":        "crm_support_query",
     "sqlite":                "sqlite_query",
+    "metadata_database":     "sqlite_query",
+    "artifacts_database":    "duckdb_query",
 }
 
 _rpc_id = 0
@@ -68,7 +70,7 @@ class QueryExecutor:
         except json.JSONDecodeError:
             return {"text": text}
 
-    def _build_arguments(self, sub_query: SubQuery) -> dict:
+    def _build_arguments(self, sub_query: SubQuery, dataset: str = "") -> dict:
         """Build tool arguments from the sub-query."""
         if sub_query.database_type == "mongodb":
             try:
@@ -93,9 +95,18 @@ class QueryExecutor:
             serialized = pipeline if isinstance(pipeline, str) else json.dumps(pipeline)
             return {"collection": collection, "pipeline": serialized}
 
-        args: dict = {"sql": sub_query.query}
-        if sub_query.db_path:
-            args["db_path"] = sub_query.db_path
+        args = {"sql": sub_query.query}
+        active_dataset = os.getenv("ACTIVE_DATASET", "").lower()
+        dataset_paths = {
+            "github_repos": {
+                "sqlite": os.getenv("SQLITE_GITHUB_PATH", ""),
+                "duckdb": os.getenv("DUCKDB_GITHUB_PATH", ""),
+            },
+        }
+        if active_dataset in dataset_paths:
+            path = dataset_paths[active_dataset].get(sub_query.database_type, "")
+            if path:
+                args["db_path"] = path
         return args
 
     def merge(self, left: dict, right: dict, left_key: str, right_key: str,

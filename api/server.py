@@ -34,6 +34,7 @@ DATASET_DBS = {
     "yelp":       ["mongodb", "duckdb"],
     "bookreview": ["postgresql_bookreview", "sqlite"],
     "agnews":     ["mongodb", "sqlite"],
+    "GITHUB_REPOS": ["metadata_database", "artifacts_database"],
 }
 
 app = FastAPI(title="Oracle Forge API", version="1.0.0")
