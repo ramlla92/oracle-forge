@@ -31,6 +31,20 @@ CRM_DB_MAP = {
     "territory":      ("sqlite", CRM_TERRITORY_PATH),
 }
 
+# DEPS_DEV_V1 db_paths
+DEPS_DEV_SQLITE_PATH = str(_DAB_ROOT / "query_DEPS_DEV_V1/query_dataset/package_query.db")
+DEPS_DEV_DUCKDB_PATH = str(_DAB_ROOT / "query_DEPS_DEV_V1/query_dataset/project_query.db")
+
+DEPS_DEV_DB_MAP = {
+    "package_database": ("sqlite", DEPS_DEV_SQLITE_PATH),
+    "project_database": ("duckdb", DEPS_DEV_DUCKDB_PATH),
+}
+
+DATASET_REGISTRY = {
+    "crmarenapro": CRM_DB_MAP,
+    "DEPS_DEV_V1": DEPS_DEV_DB_MAP,
+}
+
 
 class AgentCore:
 
@@ -55,8 +69,14 @@ class AgentCore:
         """Break multi-DB intent into one SubQuery per target database."""
         requires_join = intent.get("requires_join", False)
         join_direction = intent.get("join_direction", "mongodb_first")
-        registry = CRM_DB_MAP if dataset == "crmarenapro" else {}
+        registry = DATASET_REGISTRY.get(dataset, {})
         sub_queries = []
+
+        # Determine if any target DB is actually MongoDB (affects placeholder logic)
+        has_mongodb_target = any(
+            (registry.get(n, (n, None))[0] if n in registry else n) == "mongodb"
+            for n in intent.get("target_databases", [])
+        )
 
         for db_name in intent.get("target_databases", []):
             # Resolve logical name → db_type + db_path if in registry
@@ -66,20 +86,21 @@ class AgentCore:
                 db_type = db_name  # already a db_type string
                 db_path = None
 
-            if requires_join and join_direction == "mongodb_first" and db_type == "duckdb":
+            # Placeholder logic only applies to Yelp-style MongoDB↔DuckDB joins
+            if requires_join and join_direction == "mongodb_first" and db_type == "duckdb" and has_mongodb_target:
                 sub_queries.append(SubQuery(
                     database_type=db_type, query="SELECT 1",
                     intent=intent.get("intent_summary", question), db_path=db_path,
                     logical_name=db_name if db_name in registry else None,
                 ))
-            elif requires_join and join_direction == "duckdb_first" and db_type == "mongodb":
+            elif requires_join and join_direction == "duckdb_first" and db_type == "mongodb" and has_mongodb_target:
                 sub_queries.append(SubQuery(
                     database_type=db_type,
                     query='[{"$collection": "business"}, {"$project": {"business_id": 1, "name": 1, "description": 1}}]',
                     intent=intent.get("intent_summary", question), db_path=db_path,
                     logical_name=db_name if db_name in registry else None,
                 ))
-            elif requires_join and join_direction == "duckdb_first" and db_type == "duckdb":
+            elif requires_join and join_direction == "duckdb_first" and db_type == "duckdb" and has_mongodb_target:
                 sub_queries.append(SubQuery(
                     database_type=db_type, query="SELECT 1",
                     intent=intent.get("intent_summary", question), db_path=db_path,
@@ -141,7 +162,7 @@ class AgentCore:
         """
         corrections = []
         merges = []
-        registry = CRM_DB_MAP if dataset == "crmarenapro" else {}
+        registry = DATASET_REGISTRY.get(dataset, {})
 
         # Collect successful results (non-error, non-empty)
         good_results = {
@@ -197,6 +218,8 @@ class AgentCore:
                     "products_orders": {"product2", "order", "orderitem", "pricebook2", "pricebookentry", "productcategory", "productcategoryproduct"},
                     "activities": {"event", "task", "voicecalltranscript__c"},
                     "territory": {"territory2", "userterritory2association"},
+                    "package_database": {"packageinfo"},
+                    "project_database": {"project_packageversion", "project_info"},
                 }.get(logical_name, set())
                 forbidden_in_query = {"review", "business", "tip", "checkin"} - allowed_tables
                 q_lower = new_query.lower()
@@ -230,10 +253,25 @@ class AgentCore:
         dialect = "duckdb" if db_type == "duckdb" else ("postgresql" if "postgresql" in db_type else "sqlite")
 
         prompt = self.prompts.nl_to_sql(question, schema, dialect=dialect)
+        deps_note = ""
+        if logical_name == "package_database":
+            deps_note = (
+                "\n\nYou are querying the 'package_database' (SQLite packageinfo table). "
+                "ONLY select Name, Version, System, Licenses, VersionInfo columns. "
+                "NEVER try to get stars, forks, or GitHub metrics from this table — those are in DuckDB project_info. "
+                "For 'top N by stars/forks' questions: just filter the pool (NPM + release + optional MIT), do NOT order by stars/forks."
+            )
+        elif logical_name == "project_database":
+            deps_note = (
+                "\n\nYou are querying the 'project_database' (DuckDB). "
+                "Use the SQL template from the schema above with REGEXP_EXTRACT to extract ProjectName (owner/repo), stars, and forks. "
+                "ALWAYS use the owner/repo regex pattern: 'project ([a-zA-Z0-9._-]+/[a-zA-Z0-9._-]+)' to avoid false positives."
+            )
         prompt += (
             f"\n\nYou are querying the '{logical_name}' database specifically. "
             f"Only reference tables that belong to '{logical_name}' as documented in the schema above. "
             f"Do NOT reference any Yelp, MongoDB, review, business, checkin, or tip tables."
+            f"{deps_note}"
         )
 
         last_error = None
@@ -243,6 +281,19 @@ class AgentCore:
                 p += f"\n\nPrevious attempt rejected: {last_error}. Fix and return only a valid {dialect} query."
             raw = llm_client.call(self.client, p, system=system_context, max_tokens=512)
             cleaned = _strip_markdown(raw)
+            # Fix common LLM errors for DEPS_DEV_V1 project_database queries
+            if logical_name == "project_database":
+                cleaned = re.sub(r'\[a-zA-Z0\.9', '[a-zA-Z0-9', cleaned)
+                # Bump LIMIT to 20 so we have enough rows after SQLite whitelist filtering
+                cleaned = re.sub(r"LIMIT\s+\d+\s*;?\s*$", "LIMIT 20;", cleaned.rstrip())
+                # Remove incorrect RelationType='release' filter (only SOURCE_REPO_TYPE/ISSUE_TRACKER_TYPE exist)
+                cleaned = re.sub(r"AND\s+ppv\.RelationType\s*=\s*'release'", "", cleaned, flags=re.IGNORECASE)
+                cleaned = re.sub(r"AND\s+RelationType\s*=\s*'release'", "", cleaned, flags=re.IGNORECASE)
+            elif logical_name == "package_database":
+                # Remove LIMIT so we get the full whitelist for star/fork filtering
+                cleaned = re.sub(r'\bLIMIT\s+\d+\b\s*;?\s*$', '', cleaned.rstrip()).strip()
+                if cleaned and not cleaned.endswith(';'):
+                    cleaned += ';'
             try:
                 if not _looks_like_query(cleaned, db_type):
                     raise ValueError(f"LLM returned non-query for {logical_name}: {cleaned[:120]}")
@@ -250,15 +301,18 @@ class AgentCore:
                 forbidden = {"review", "business", "tip", "checkin", "case", "casehistory__c",
                              "knowledge__kav", "issue__c", "emailmessage", "livechattranscript"}
                 # Only block tables that don't belong to this logical DB
-                crm_tables = {
+                logical_tables = {
                     "core_crm": {"user", "account", "contact"},
                     "sales_pipeline": {"opportunity", "contract", "lead", "quote", "opportunitylineitem", "quotelineitem"},
                     "support": {"case", "knowledge__kav", "issue__c", "casehistory__c", "emailmessage", "livechattranscript"},
                     "products_orders": {"product2", "order", "orderitem", "pricebook2", "pricebookentry", "productcategory", "productcategoryproduct"},
                     "activities": {"event", "task", "voicecalltranscript__c"},
                     "territory": {"territory2", "userterritory2association"},
+                    # DEPS_DEV_V1
+                    "package_database": {"packageinfo"},
+                    "project_database": {"project_packageversion", "project_info"},
                 }
-                allowed = crm_tables.get(logical_name, set())
+                allowed = logical_tables.get(logical_name, set())
                 q_lower = cleaned.lower()
                 bad_tables = forbidden - allowed
                 if any(re.search(rf'\b{t}\b', q_lower) for t in bad_tables):
@@ -610,8 +664,8 @@ class AgentCore:
                 # Results from earlier queries are passed as context to the synthesizer.
                 for sq in sub_queries:
                     result, corrections = self._execute_with_retry(sq, request.question)
-                    # Use logical DB name as key if available (from db_path), else db_type
-                    result_key = _logical_name_from_path(sq.db_path) or sq.database_type
+                    # Use logical_name if set (e.g. "package_database"), else file stem, else db_type
+                    result_key = sq.logical_name or _logical_name_from_path(sq.db_path) or sq.database_type
                     raw_results[result_key] = result
                     self_corrections.extend(corrections)
 
@@ -622,14 +676,25 @@ class AgentCore:
                     isinstance(v, dict) and "error" in v
                     for v in raw_results.values()
                 )
-                if dataset in ("crmarenapro",) and has_errors:
+                if dataset in DATASET_REGISTRY and has_errors:
                     raw_results, extra_corrections, extra_merges = self._crm_second_pass(
                         request.question, sub_queries, raw_results, dataset
                     )
                     self_corrections.extend(extra_corrections)
                     merge_operations.extend(extra_merges)
 
-        answer = self._synthesize(request.question, raw_results)
+                # DEPS_DEV_V1: filter project_database (DuckDB) by package_database (SQLite) whitelist
+                # This removes false positives (packages that don't meet NPM/release/MIT criteria)
+                if dataset == "DEPS_DEV_V1":
+                    pkg_result = raw_results.get("package_database")
+                    proj_result = raw_results.get("project_database")
+                    if pkg_result is not None and proj_result is not None:
+                        filtered_proj = _filter_deps_by_package_db(pkg_result, proj_result)
+                        raw_results["project_database"] = filtered_proj
+                        n = len(filtered_proj) if isinstance(filtered_proj, list) else "?"
+                        merge_operations.append(f"deps-dev whitelist filter: {n} rows kept")
+
+        answer = self._synthesize(request.question, raw_results, dataset=dataset)
 
         trace = QueryTrace(
             timestamp=datetime.utcnow().isoformat(),
@@ -654,7 +719,14 @@ class AgentCore:
 
         for attempt in range(self.corrector.max_retries + 1):
             try:
-                result = self._call_mcp(sub_query.database_type, current_query)
+                exec_sq = SubQuery(
+                    database_type=sub_query.database_type,
+                    query=current_query,
+                    intent=sub_query.intent,
+                    db_path=sub_query.db_path,
+                    logical_name=sub_query.logical_name,
+                )
+                result = self.executor.execute(exec_sq)
                 return result, corrections
             except Exception as e:
                 error_str = str(e)
@@ -761,7 +833,12 @@ Rules:
             raise ValueError(f"LLM returned non-query for sqlite: {cleaned[:120]}")
         return cleaned
 
-    def _synthesize(self, question: str, raw_results: dict) -> str:
+    def _synthesize(self, question: str, raw_results: dict, dataset: str = "") -> str:
+        # DEPS_DEV_V1: bypass LLM entirely — format DuckDB rows directly to prevent truncation
+        if dataset == "DEPS_DEV_V1":
+            direct = _synthesize_deps_dev_direct(raw_results)
+            if direct is not None:
+                return direct
         enriched = _augment_with_category_aggregation(raw_results)
         prompt = self.prompts.synthesize_response(question, enriched, {})
         return llm_client.call(self.client, prompt, max_tokens=1024)
@@ -784,6 +861,71 @@ Rules:
             json.dump(log_entry, f, indent=2)
 
 
+def _filter_deps_by_package_db(sqlite_result, duck_result):
+    """Filter DuckDB project_database rows to only those present in SQLite package_database.
+    Builds a (Name, Version) whitelist from SQLite and keeps only matching DuckDB rows.
+    Falls back to unfiltered duck_result if SQLite returned an error or no pairs matched.
+    """
+    if not sqlite_result or not duck_result:
+        return duck_result
+    if isinstance(sqlite_result, dict) and "error" in sqlite_result:
+        return duck_result
+    if isinstance(duck_result, dict) and "error" in duck_result:
+        return duck_result
+    if not isinstance(sqlite_result, list) or not isinstance(duck_result, list):
+        return duck_result
+
+    valid_pairs: set = set()
+    for row in sqlite_result:
+        if isinstance(row, dict):
+            name = row.get("Name") or row.get("name") or ""
+            version = row.get("Version") or row.get("version") or ""
+        elif isinstance(row, (list, tuple)) and len(row) >= 2:
+            name, version = str(row[0]), str(row[1])
+        else:
+            continue
+        if name:
+            valid_pairs.add((str(name), str(version)))
+
+    if not valid_pairs:
+        return duck_result  # SQLite returned nothing useful — don't filter
+
+    filtered = []
+    for row in duck_result:
+        if isinstance(row, dict):
+            name = row.get("Name") or row.get("name") or ""
+            version = row.get("Version") or row.get("version") or ""
+        elif isinstance(row, (list, tuple)) and len(row) >= 2:
+            name, version = str(row[0]), str(row[1])
+        else:
+            filtered.append(row)
+            continue
+        if (str(name), str(version)) in valid_pairs:
+            filtered.append(row)
+
+    return filtered if filtered else duck_result  # fallback if nothing matched (e.g. Q2 forks)
+
+
+def _synthesize_deps_dev_direct(raw_results: dict):
+    """Bypass LLM for DEPS_DEV_V1 — dump DuckDB rows as CSV to prevent truncation.
+    Returns None if no project_database result available (falls back to LLM).
+    """
+    duck_result = (raw_results.get("project_database")
+                   or raw_results.get("project_query"))
+    if not duck_result or not isinstance(duck_result, list) or len(duck_result) == 0:
+        return None
+
+    lines = []
+    for row in duck_result:
+        if isinstance(row, (list, tuple)):
+            lines.append(",".join(str(c) for c in row))
+        elif isinstance(row, dict):
+            lines.append(",".join(str(v) for v in row.values()))
+        else:
+            lines.append(str(row))
+    return "\n".join(lines)
+
+
 _MARKDOWN_FENCE = re.compile(r"```[\w]*\n?([\s\S]*?)```")
 
 
@@ -797,8 +939,8 @@ def _enforce_intent_db_coverage(question: str, available_databases: list[str], i
     target = intent.get("target_databases") or []
 
     # Resolve logical names for datasets in the registry
-    if dataset and bool(CRM_DB_MAP if dataset == "crmarenapro" else {}):
-        registry = CRM_DB_MAP if dataset == "crmarenapro" else {}
+    if dataset and bool(DATASET_REGISTRY.get(dataset, {})):
+        registry = DATASET_REGISTRY.get(dataset, {})
         resolved = []
         for name in target:
             if name in registry:

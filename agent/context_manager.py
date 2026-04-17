@@ -78,6 +78,9 @@ class ContextManager:
             "products_orders":       "### CRMArena Pro",
             "activities":            "### CRMArena Pro",
             "territory":             "### CRMArena Pro",
+            # DEPS_DEV_V1 logical DB names
+            "package_database":      "### SQLite — deps_dev package_database",
+            "project_database":      "### DuckDB — deps_dev project_database",
         }
         heading = heading_map.get(db_type)
         if not heading:
@@ -93,16 +96,20 @@ class ContextManager:
         return content[start:end].strip()
 
     def get_schema_for_logical_db(self, logical_name: str) -> str:
-        """Return a focused schema snippet for a specific CRM logical DB.
-        Extracts only the line from the CRMArena Pro section that describes this DB's tables.
+        """Return a focused schema snippet for a specific logical DB.
+        For datasets where each logical DB has its own AGENT.md section (DEPS_DEV_V1),
+        returns that full section. For CRM (all share one section), filters to the relevant tables.
         """
+        deps_logical = {"package_database", "project_database"}
+        if logical_name in deps_logical:
+            return self.get_schema_for_db(logical_name)
+
         full_crm = self.get_schema_for_db(logical_name)
-        # Extract just the line(s) for this logical DB from the table fields section
+        # Extract just the line(s) for this CRM logical DB from the shared CRMArena Pro section
         lines = full_crm.split("\n")
         result = []
         in_section = False
         for line in lines:
-            # Include header and critical rules always
             if line.startswith("### CRMArena") or line.startswith("**DAB root") or line.startswith("**Critical"):
                 result.append(line)
                 in_section = False
@@ -110,7 +117,7 @@ class ContextManager:
                 result.append(line)
                 in_section = True
             elif in_section and line.startswith("`") and not line.startswith(f"`{logical_name}`"):
-                in_section = False  # next logical DB started
+                in_section = False
             elif in_section:
                 result.append(line)
         return "\n".join(result) if result else full_crm

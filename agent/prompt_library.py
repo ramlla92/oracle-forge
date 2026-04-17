@@ -6,9 +6,23 @@ class PromptLibrary:
     def intent_analysis(self, question: str, available_databases: list[str]) -> str:
         # For crmarenapro, available_databases contains logical DB names — tell the LLM to use them
         crm_logical = {"core_crm", "sales_pipeline", "support", "products_orders", "activities", "territory"}
+        deps_logical = {"package_database", "project_database"}
         is_crm = bool(set(available_databases) & crm_logical)
+        is_deps = bool(set(available_databases) & deps_logical)
 
-        if is_crm:
+        if is_deps:
+            routing_rules = """ROUTING RULES for DEPS_DEV_V1 — use the logical DB names exactly as listed:
+- package_database (SQLite): table `packageinfo` — has System, Name, Version, Licenses (JSON), VersionInfo (JSON with IsRelease), UpstreamPublishedAt
+- project_database (DuckDB): tables `project_packageversion` (System, Name, Version, ProjectType, ProjectName) and `project_info` (Project_Information text with stars/forks, Licenses, Description)
+
+KEY ROUTING DECISIONS:
+- Questions about package versions, licenses, release status → "package_database" (SQLite)
+- Questions about GitHub stars, forks, project info → "project_database" (DuckDB)
+- Most questions need BOTH — include both and set requires_join=true
+- Join key: (System, Name, Version) across package_database ↔ project_database via project_packageversion
+
+Return the EXACT logical DB names in target_databases, not generic types like "sqlite" or "duckdb"."""
+        elif is_crm:
             routing_rules = """ROUTING RULES for CRMArena Pro — use the logical DB names exactly as listed:
 - core_crm (SQLite): User, Account, Contact — use for user/account/contact lookups and agent name resolution
 - sales_pipeline (DuckDB): Opportunity, Contract, Lead, Quote, OpportunityLineItem, QuoteLineItem — use for sales pipeline, quotes, contracts
@@ -245,11 +259,14 @@ Fix the query. Return only the corrected query, no explanation."""
             truncated_results[k] = v
 
         # Always show DuckDB result separately to ensure it's not cut off
-        duck_result = merged_results.get("duckdb")
+        # Check all possible DuckDB result keys (duckdb, project_database, project_query)
+        duck_key = next((k for k in ("duckdb", "project_database", "project_query")
+                         if merged_results.get(k) is not None), None)
+        duck_result = merged_results.get(duck_key) if duck_key else None
         duck_section = ""
         if duck_result is not None:
             duck_section = f"\n\nDuckDB result (CRITICAL — contains the metrics/counts):\n{json.dumps(duck_result, indent=2, default=str, ensure_ascii=False)}"
-            truncated_results.pop("duckdb", None)
+            truncated_results.pop(duck_key, None)
 
         return f"""Synthesize a clear, direct answer to the user's question from these database results.
 
@@ -281,6 +298,16 @@ CATEGORY AGGREGATION RULE:
   because the list may contain up to 10 entries and the question's "top 5" is based on the ranked list.
 - Do NOT recompute from MongoDB descriptions if category_aggregation is present.
 - Otherwise, extract categories from MongoDB descriptions (look for text after "including", "featuring", "specializes in").
+
+CRITICAL JOINING RULE (DEPS_DEV_V1 — when results are keyed by "package_database"/"project_database"):
+- IGNORE "package_database" (SQLite) results entirely when "project_database" (DuckDB) results are available
+- The DuckDB "project_database" result IS the final answer — use it exclusively
+- For star/fork questions: DuckDB returns columns like Name, Version, stars, forks, ProjectName — use those directly
+- For ProjectName questions (GitHub forks): output each row as "ProjectName,Version,ForksCount"
+  e.g. "mui-org/material-ui,0.2.0,30522" — one per line, ALL rows in the DuckDB result
+- For package name+stars questions: output each row as "Name,Version"
+  e.g. "@dmrvos/infrajs>0.0.6>typescript,2.6.2" — version MUST immediately follow Name with only a comma
+- Output ALL DuckDB rows (not just top N) — list every row one per line, do not truncate
 
 CRITICAL FORMAT RULES (required for automated evaluation):
 - For state/entity + metric answers: ALWAYS use the compact format:

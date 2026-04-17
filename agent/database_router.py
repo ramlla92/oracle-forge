@@ -12,7 +12,7 @@ DATASET_DB_MAP = {
     "stockindex":    {"indexinfo_database": "sqlite",      "indextrade_database": "duckdb"},
     "stockmarket":   {"stockinfo_database": "sqlite",      "stocktrade_database": "duckdb"},
     "pancancer":     {"clinical_database": "postgresql",   "molecular_database": "duckdb"},
-    "deps_dev":      {"package_database": "sqlite",        "project_database": "duckdb"},
+    "DEPS_DEV_V1":   {"package_database": "sqlite",        "project_database": "duckdb"},
     "github_repos":  {"metadata_database": "sqlite",       "artifacts_database": "duckdb"},
     "patents":       {"publication_database": "sqlite",     "CPCDefinition_database": "postgresql"},
 }
