@@ -13,41 +13,89 @@ from agent.self_corrector import SelfCorrector
 
 
 def _enforce_intent_db_coverage(
-    question: str, available_databases: list, intent: dict, dataset: str = ""
+    question: str, available_databases: list[str], intent: dict, dataset: str = ""
 ) -> dict:
-    """Ensure intent includes all available databases when the question needs them."""
-    target = intent.get('target_databases', [])
+    """Merge LLM intent with heuristics so multi-DB questions include the right stores."""
+    target = set(intent.get("target_databases") or [])
     if not target:
-        intent['target_databases'] = list(available_databases)
-        intent['requires_join'] = len(available_databases) > 1
-        return intent
-    join_keywords = ['most', 'top', 'highest', 'proportion', 'count', 'how many',
-                     'which', 'list', 'identify', 'number of', 'frequently', 'average']
-    q_lower = question.lower()
-    if any(kw in q_lower for kw in join_keywords) and len(available_databases) > 1:
-        for db in available_databases:
-            if db not in target:
-                target.append(db)
-        intent['target_databases'] = target
-        intent['requires_join'] = True
+        target = set(available_databases)
+        intent["requires_join"] = len(available_databases) > 1
+    q = question.lower()
+    available = set(available_databases)
+
+    join_keywords = [
+        "most", "top", "highest", "proportion", "count", "how many",
+        "which", "list", "identify", "number of", "frequently", "average",
+    ]
+    if any(kw in q for kw in join_keywords) and len(available_databases) > 1:
+        target |= available
+
+    MONGO_SIGNALS = (
+        "city", "state", "categor", "wifi", "wi-fi", "parking", "credit card", "business"
+    )
+    needs_duck_rating = "rating" in q
+    _YEARS = ("2015", "2016", "2017", "2018", "2019", "2020")
+    needs_duck_temporal = ("review" in q or "registered" in q) and any(yr in q for yr in _YEARS)
+
+    if "mongodb" in available and any(s in q for s in MONGO_SIGNALS):
+        target.add("mongodb")
+    if "duckdb" in available and (needs_duck_rating or needs_duck_temporal):
+        target.add("duckdb")
+
+    ds = (dataset or "").lower()
+    if ds == "agnews" and {"mongodb", "sqlite"}.issubset(available):
+        _AGNEWS_METADATA_TERMS = (
+            "author", "published", "publication", "year",
+            "europe", "asia", "africa", "north america", "south america", "oceania",
+            "region", "2010", "2011", "2012", "2013", "2014", "2015",
+            "2016", "2017", "2018", "2019", "2020",
+        )
+        if any(term in q for term in _AGNEWS_METADATA_TERMS):
+            target.update({"mongodb", "sqlite"})
+        else:
+            target.add("mongodb")
+
+    if ds == "patents" and {"postgresql", "sqlite"}.issubset(available):
+        if "patent" in q or "cpc" in q:
+            target.update({"postgresql", "sqlite"})
+
+    target &= available
+    if not target:
+        target = available
+    intent["target_databases"] = sorted(target)
+    intent["requires_join"] = len(target) > 1
     return intent
 
 
 def _validate_query_semantics(question: str, db_type: str, query: str) -> None:
-    """Perform semantic validation on a generated query.
-    Raises ValueError if the query has obvious semantic problems.
-    Passes silently if the query looks correct.
-    """
+    """Perform semantic validation on a generated query."""
     q = query.strip().lower()
-    if q.startswith('select null'):
-        raise ValueError('Query is a SELECT NULL fallback')
+    if q.startswith("select null"):
+        raise ValueError("Query is a SELECT NULL fallback")
     if len(q) < 10:
-        raise ValueError(f'Query too short to be valid: {query[:50]}')
-    if db_type == 'duckdb' and 'from business' in q:
-        raise ValueError('DuckDB has no business table — route business queries to MongoDB')
-    if db_type == 'sqlite' and 'try_strptime' in q:
-        raise ValueError('TRY_STRPTIME is DuckDB syntax, not valid in SQLite')
-    return
+        raise ValueError(f"Query too short to be valid: {query[:50]}")
+    if db_type == "duckdb" and "from business" in q:
+        raise ValueError("DuckDB has no business table — route business queries to MongoDB")
+    if db_type == "sqlite" and "try_strptime" in q:
+        raise ValueError("TRY_STRPTIME is DuckDB syntax, not valid in SQLite")
+
+    qn = question.lower()
+    rating_question = "rating" in qn
+    if rating_question:
+        if db_type == "mongodb":
+            compact = query.lower().replace(" ", "")
+            if '"$avg":"$review_count"' in compact:
+                msg = "Invalid: $avg on $review_count used as rating in MongoDB pipeline."
+                raise ValueError(msg)
+        else:
+            if re.search(r"\bavg\s*\(\s*\w*\.?\s*review_count\s*\)", query, re.IGNORECASE):
+                raise ValueError("Invalid: AVG(review_count) used as rating in SQL query.")
+
+    stripped = query.strip().lower()
+    if db_type == "duckdb" and stripped.startswith("select null"):
+        raise ValueError("Invalid placeholder DuckDB query.")
+    if db_type == "mongodb" and stripped in ("[]", "{}", "[{}]"):
+        raise ValueError("Invalid empty MongoDB pipeline.")
 
 class AgentCore:
 
@@ -57,6 +105,7 @@ class AgentCore:
         self.prompts = prompt_library
         self.corrector = SelfCorrector(prompt_library, self.client)
         self.executor = QueryExecutor()
+        self._active_dataset = ""
 
     def analyze_intent(self, question: str, available_databases: list[str]) -> dict:
         """Call LLM to identify which DBs to query and extract structured intent.
@@ -68,7 +117,9 @@ class AgentCore:
         prompt = self.prompts.intent_analysis(question, available_databases)
         text = llm_client.call(self.client, prompt, system=system_context, max_tokens=1024)
         intent = json.loads(_strip_markdown(text))
-        return _enforce_intent_db_coverage(question, available_databases, intent)
+        return _enforce_intent_db_coverage(
+            question, available_databases, intent, self._active_dataset
+        )
 
     def decompose_query(self, question: str, intent: dict) -> list[SubQuery]:
         """Break multi-DB intent into one SubQuery per target database."""
@@ -123,12 +174,16 @@ class AgentCore:
 
     def _generate_query_for_db(self, question: str, db_type: str, intent: dict) -> str:
         """Generate a query string for a specific database type."""
-        schema = self.ctx.get_schema_for_db(db_type)
+        schema = self.ctx.get_schema_for_db(db_type, self._active_dataset)
         system_context = self.ctx.get_full_context()
         if db_type == "mongodb":
-            base_prompt = self.prompts.nl_to_mongodb(question, schema)
+            base_prompt = self.prompts.nl_to_mongodb(
+                question, schema, dataset=self._active_dataset
+            )
         else:
-            base_prompt = self.prompts.nl_to_sql(question, schema, dialect=db_type)
+            base_prompt = self.prompts.nl_to_sql(
+                question, schema, dialect=db_type, dataset=self._active_dataset
+            )
 
         last_error = None
         for attempt in range(3):
@@ -138,7 +193,7 @@ class AgentCore:
                     f"\n\nPrevious attempt was rejected: {last_error}. "
                     f"Fix the issue and return only a valid {db_type} query."
                 )
-            raw = llm_client.call(self.client, prompt, system=system_context, max_tokens=512)
+            raw = llm_client.call(self.client, prompt, system=system_context, max_tokens=1200)
             cleaned = _strip_markdown(raw)
             try:
                 if not _looks_like_query(cleaned, db_type):
@@ -158,12 +213,17 @@ class AgentCore:
         raw_results: dict = {}
         merge_operations: list[str] = []
 
+        self._active_dataset = (request.dataset or "").lower()
+        if request.dataset:
+            self.executor.dataset = request.dataset
+
         intent = self.analyze_intent(request.question, request.available_databases)
         is_category_q = intent.get("is_category_question", False)
         sub_queries = self.decompose_query(request.question, intent)
 
         mongo_sq = next((sq for sq in sub_queries if sq.database_type == "mongodb"), None)
         duck_sq  = next((sq for sq in sub_queries if sq.database_type == "duckdb"),  None)
+        sqlite_sq = next((sq for sq in sub_queries if sq.database_type == "sqlite"), None)
 
         join_direction = intent.get("join_direction", "mongodb_first")
 
@@ -431,6 +491,37 @@ class AgentCore:
             # Replace duck_sq in sub_queries for the trace
             sub_queries = [mongo_sq if sq.database_type == "mongodb" else duck_sq
                            for sq in sub_queries]
+        elif sqlite_sq and mongo_sq and self._active_dataset == "agnews":
+            # agnews: SQLite metadata first → article_ids → MongoDB article content
+            sqlite_result, sqlite_corr = self._execute_with_retry(sqlite_sq, request.question)
+            raw_results["sqlite"] = sqlite_result
+            self_corrections.extend(sqlite_corr)
+
+            article_ids = _extract_article_ids(sqlite_result)
+            if article_ids:
+                new_mongo_query = _build_mongo_article_fetch(article_ids)
+                mongo_sq = SubQuery(
+                    database_type="mongodb",
+                    query=new_mongo_query,
+                    intent=mongo_sq.intent,
+                )
+                merge_operations.append(
+                    f"sqlite→mongodb join on {len(article_ids)} article_ids"
+                )
+            else:
+                mongo_sq = SubQuery(
+                    database_type="mongodb",
+                    query=_ensure_mongo_limit(mongo_sq.query, limit=500),
+                    intent=mongo_sq.intent,
+                )
+            mongo_result, mongo_corr = self._execute_with_retry(mongo_sq, request.question)
+            raw_results["mongodb"] = mongo_result
+            self_corrections.extend(mongo_corr)
+
+            sub_queries = [
+                sqlite_sq if sq.database_type == "sqlite" else mongo_sq
+                for sq in sub_queries
+            ]
         elif any(sq.database_type == "github_repos_metadata" for sq in sub_queries):
             # GITHUB_REPOS: SQLite-first — get repo_names from metadata, then query artifacts
             meta_sq = next(
@@ -501,9 +592,9 @@ class AgentCore:
                 if pg_ids:
                     try:
                         purchase_ids_sql = ", ".join(f"'purchaseid_{i}'" for i in pg_ids)
+                        sqlite_schema = self.ctx.get_schema_for_db("sqlite", self._active_dataset)
                         new_sql_query = self._generate_sqlite_with_ids(
-                            request.question, self.ctx.get_schema_for_db("sqlite"),
-                            purchase_ids_sql
+                            request.question, sqlite_schema, purchase_ids_sql
                         )
                         sql_sq = SubQuery(
                             database_type="sqlite",
@@ -559,7 +650,7 @@ class AgentCore:
         """Execute a sub-query, retrying up to max_retries on failure with self-correction."""
         corrections = []
         current_query = sub_query.query
-        schema = self.ctx.get_schema_for_db(sub_query.database_type)
+        schema = self.ctx.get_schema_for_db(sub_query.database_type, self._active_dataset)
 
         for attempt in range(self.corrector.max_retries + 1):
             try:
@@ -613,7 +704,7 @@ class AgentCore:
     ) -> str:
         """Generate a DuckDB query pre-filtered to specific business_refs from MongoDB results."""
         refs_sql = ", ".join(f"'{r}'" for r in business_refs)
-        schema = self.ctx.get_schema_for_db("duckdb")
+        schema = self.ctx.get_schema_for_db("duckdb", self._active_dataset)
         system_context = self.ctx.get_full_context()
         base_prompt = self.prompts.nl_to_sql_with_refs(question, schema, refs_sql)
         last_error = None
@@ -624,7 +715,7 @@ class AgentCore:
                     f"\n\nPrevious attempt was rejected: {last_error}. "
                     "Fix the issue and return only a valid DuckDB SELECT query."
                 )
-            raw = llm_client.call(self.client, prompt, system=system_context, max_tokens=512)
+            raw = llm_client.call(self.client, prompt, system=system_context, max_tokens=1200)
             cleaned = _strip_markdown(raw)
             try:
                 if not _looks_like_query(cleaned, "duckdb"):
@@ -671,8 +762,19 @@ Rules:
         return cleaned
 
     def _synthesize(self, question: str, raw_results: dict) -> str:
+        all_errors = all(
+            isinstance(v, dict) and "error" in v
+            for v in raw_results.values()
+        )
+        if all_errors and raw_results:
+            return (
+                "I could not produce a reliable answer because all database queries failed. "
+                "Please retry after fixing the failing query path."
+            )
         enriched = _augment_with_category_aggregation(raw_results)
-        prompt = self.prompts.synthesize_response(question, enriched, {})
+        prompt = self.prompts.synthesize_response(
+            question, enriched, {}, dataset=self._active_dataset
+        )
         return llm_client.call(self.client, prompt, max_tokens=1024)
 
     def _log_run(self, request: QueryRequest, response: AgentResponse,
@@ -715,7 +817,15 @@ def _looks_like_query(text: str, db_type: str) -> bool:
     t = text.strip().lower()
     if db_type == "mongodb":
         return t.startswith("[") or t.startswith("{")
-    return any(t.startswith(k) for k in ("select", "with", "insert", "update", "delete", "explain"))
+    sql_starts = ("select", "with", "insert", "update", "delete", "explain")
+    if not any(t.startswith(k) for k in sql_starts):
+        return False
+    dangling_suffixes = (" from", " where", " join", " on", " and", " or", " select", ",")
+    if any(t.endswith(sfx) for sfx in dangling_suffixes):
+        return False
+    if t.count("(") != t.count(")"):
+        return False
+    return True
 
 
 _CAT_EXTRACT_PATTERNS = [
@@ -1170,3 +1280,38 @@ def _merge_pg_sqlite_results(pg_result, sqlite_result) -> list[dict]:
             }
             merged.append(combined)
     return merged
+
+
+def _extract_article_ids(sqlite_result) -> list[int]:
+    """Extract article_id integers from a SQLite result set."""
+    rows = sqlite_result if isinstance(sqlite_result, list) else sqlite_result.get("rows", [])
+    ids = []
+    for row in rows:
+        if isinstance(row, dict) and "article_id" in row:
+            try:
+                ids.append(int(row["article_id"]))
+            except (ValueError, TypeError):
+                pass
+    return ids
+
+
+def _ensure_mongo_limit(pipeline_str: str, limit: int = 500) -> str:
+    """Add a $limit stage to a MongoDB pipeline JSON string if one isn't already present."""
+    try:
+        pipeline = json.loads(pipeline_str)
+        if not any("$limit" in stage for stage in pipeline if isinstance(stage, dict)):
+            pipeline.append({"$limit": limit})
+        return json.dumps(pipeline)
+    except (json.JSONDecodeError, TypeError):
+        return pipeline_str
+
+
+def _build_mongo_article_fetch(article_ids: list[int], limit: int = 3000) -> str:
+    """Build a MongoDB pipeline that fetches title+description for specific article_ids."""
+    ids = article_ids[:limit]
+    pipeline = [
+        {"$collection": "articles"},
+        {"$match": {"article_id": {"$in": ids}}},
+        {"$project": {"_id": 0, "article_id": 1, "title": 1, "description": 1}},
+    ]
+    return json.dumps(pipeline)

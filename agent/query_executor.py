@@ -31,6 +31,7 @@ class QueryExecutor:
     def __init__(self, mcp_base_url: str = MCP_BASE_URL, timeout: float = 30.0):
         self.endpoint = mcp_base_url.rstrip("/") + "/mcp"
         self.timeout = timeout
+        self.dataset: str = ""  # set by AgentCore.run() for logging / future MCP hints
 
     def execute(self, sub_query: SubQuery) -> dict:
         """Execute a sub-query via MCP JSON-RPC. Raises on error — caller handles retry."""

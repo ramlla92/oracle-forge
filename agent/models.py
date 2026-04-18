@@ -7,6 +7,7 @@ class QueryRequest(BaseModel):
     question: str
     available_databases: list[str]
     session_id: str
+    dataset: Optional[str] = None
 
 
 class SubQuery(BaseModel):

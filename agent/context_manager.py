@@ -1,4 +1,6 @@
+import os
 from datetime import datetime
+from pathlib import Path
 from typing import Optional
 
 
@@ -60,10 +62,13 @@ class ContextManager:
         truncation_msg = "\n...[context truncated to fit token budget]...\n"
         return text[:keep_start] + truncation_msg + text[-keep_end:]
 
-    def get_schema_for_db(self, db_type: str) -> str:
-        """Extract the schema section for a specific DB type from AGENT.md."""
+    def get_schema_for_db(self, db_type: str, dataset: str = "") -> str:
+        """Extract schema from DataAgentBench hints when possible, else AGENT.md."""
+        dataset_schema = self._load_dataset_schema(db_type, dataset)
+        if dataset_schema:
+            return dataset_schema
+
         content = self._load_layer1_schema()
-        # Map db_type to the heading used in AGENT.md
         heading_map = {
             "mongodb":               "### MongoDB",
             "duckdb":                "### DuckDB",
@@ -79,12 +84,66 @@ class ContextManager:
         start = content.find(heading)
         if start == -1:
             return content
-        # Find the next sibling (###) or parent (##) heading after our section
         next_h3 = content.find("\n### ", start + len(heading))
         next_h2 = content.find("\n## ", start + 1)
         candidates = [p for p in (next_h3, next_h2) if p != -1]
         end = min(candidates) if candidates else len(content)
         return content[start:end].strip()
+
+    def _load_dataset_schema(self, db_type: str, dataset: str) -> str:
+        """Load dataset-native schema from DataAgentBench when available."""
+        ds = (dataset or "").strip()
+        if not ds:
+            return ""
+
+        dab_root = Path(os.getenv("DAB_ROOT", str(Path.home() / "DataAgentBench")))
+        candidates = [
+            dab_root / f"query_{ds}" / "db_description_withhint.txt",
+            dab_root / f"query_{ds.upper()}" / "db_description_withhint.txt",
+            dab_root / f"query_{ds.lower()}" / "db_description_withhint.txt",
+            dab_root / f"query_{ds}" / "db_description.txt",
+            dab_root / f"query_{ds.upper()}" / "db_description.txt",
+            dab_root / f"query_{ds.lower()}" / "db_description.txt",
+        ]
+        description_path = next((p for p in candidates if p.exists()), None)
+        if not description_path:
+            return ""
+
+        try:
+            full_description = description_path.read_text()
+        except OSError:
+            return ""
+
+        section = self._pick_db_section(full_description, db_type)
+        db_hint = "PostgreSQL" if db_type == "postgresql" else db_type.upper()
+        return f"### {db_hint} (DataAgentBench {ds})\n{section}"
+
+    def _pick_db_section(self, description: str, db_type: str) -> str:
+        """Return only the section relevant to the target database type."""
+        lines = description.splitlines()
+        sections: list[list[str]] = []
+        current: list[str] = []
+
+        def _is_section_header(line: str) -> bool:
+            s = line.strip()
+            return len(s) > 2 and s[0].isdigit() and s[1] == "." and s[2] == " "
+
+        for line in lines:
+            if _is_section_header(line):
+                if current:
+                    sections.append(current)
+                current = [line]
+            else:
+                current.append(line)
+        if current:
+            sections.append(current)
+
+        needle = "postgresql" if db_type == "postgresql" else db_type
+        for sec in sections:
+            block = "\n".join(sec)
+            if needle in block.lower():
+                return block
+        return description
 
     def add_to_session(self, query: str, result_summary: str, correction: Optional[str] = None):
         self._session_history.append({

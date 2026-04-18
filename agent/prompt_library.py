@@ -36,7 +36,10 @@ Respond with valid JSON only:
   "is_category_question": false
 }}"""
 
-    def nl_to_sql(self, question: str, schema: str, dialect: str = "postgresql") -> str:
+    def nl_to_sql(self, question: str, schema: str, dialect: str = "postgresql",
+                  dataset: str = "") -> str:
+        if dataset == "agnews" and dialect == "sqlite":
+            return self._nl_to_sqlite_agnews(question)
         pg_note = ""
         if dialect == "postgresql":
             pg_note = "\n- IMPORTANT: PostgreSQL and SQLite are SEPARATE databases. Do NOT join to SQLite tables (review) in this query. Only query tables available in PostgreSQL. Always include book_id in the SELECT so results can be joined to SQLite later."
@@ -63,7 +66,36 @@ Rules:
 - For apostrophes in string literals use doubled single quotes: 'Children''s Books' — NEVER backslash escaping{pg_note}
 - For {dialect}: {self._dialect_rules(dialect)}"""
 
-    def nl_to_mongodb(self, question: str, collection_schema: str) -> str:
+    def _nl_to_sqlite_agnews(self, question: str) -> str:
+        return f"""Generate a SQLite query for the agnews metadata database.
+
+Schema:
+  article_metadata(article_id INTEGER, author_id INTEGER, region TEXT, publication_date TEXT)
+  authors(author_id INTEGER, name TEXT)
+  publication_date format: 'YYYY-MM-DD'
+
+Question: {question}
+
+CRITICAL RULES:
+1. Your ONLY job is to return article_id values (and optionally region, publication_date).
+   Article category (Sports/Business/World/Science/Technology) does NOT exist in this database.
+   Do NOT try to filter or count by category — category will be inferred from MongoDB content.
+2. Return: SELECT am.article_id [, am.region, am.publication_date]
+   FROM article_metadata am [JOIN authors a ON am.author_id = a.author_id]
+   [WHERE <non-category filter>]
+3. For author name filters: JOIN authors and WHERE a.name = '...'
+4. For year filters: WHERE strftime('%Y', publication_date) = '2015' or BETWEEN '2010' AND '2020'
+5. For region filters: WHERE region = 'Europe'  (case-sensitive, exact match)
+6. Return ONLY the SQL query, no explanation.
+
+Examples:
+  Amy Jones articles: SELECT am.article_id FROM article_metadata am JOIN authors a ON am.author_id = a.author_id WHERE a.name = 'Amy Jones'
+  Europe 2010-2020:   SELECT am.article_id, am.publication_date FROM article_metadata am WHERE region = 'Europe' AND CAST(strftime('%Y', am.publication_date) AS INTEGER) BETWEEN 2010 AND 2020
+  2015 by region:     SELECT am.article_id, am.region FROM article_metadata am WHERE strftime('%Y', am.publication_date) = '2015'"""
+
+    def nl_to_mongodb(self, question: str, collection_schema: str, dataset: str = "") -> str:
+        if dataset == "agnews":
+            return self._nl_to_mongodb_agnews(question, collection_schema)
         return f"""Generate a MongoDB aggregation pipeline for this question.
 
 Collection schema:
@@ -127,6 +159,28 @@ Example output:
 
 Return only the valid JSON array, no explanation, no markdown fences."""
 
+    def _nl_to_mongodb_agnews(self, question: str, collection_schema: str) -> str:
+        return f"""Generate a MongoDB aggregation pipeline for this question about news articles.
+
+Collection: articles_db.articles
+Fields: article_id (int), title (str), description (str)
+
+CRITICAL: There is NO category, label, or class field. Do NOT filter by any category field.
+Article categories (World/Sports/Business/Science/Technology) are inferred from title and description
+during synthesis — not stored as a DB field.
+
+Question: {question}
+
+Requirements:
+1. Always prepend: {{"$collection": "articles"}}
+2. Always include article_id, title, and description in the output via $project.
+3. If the question involves description length: use {{"$addFields": {{"desc_len": {{"$strLenCP": "$description"}}}}}} then $sort desc_len descending, $limit 500.
+4. If filtering by specific article_ids (from SQLite join): use {{"$match": {{"article_id": {{"$in": [list]}}}}}}
+5. Do NOT filter by category, label, or class — these fields do not exist.
+6. Do NOT reference business_id — this collection does not have that field.
+
+Return only the valid JSON array pipeline, no explanation, no markdown fences."""
+
     def nl_to_sql_with_refs(self, question: str, schema: str, business_refs_sql: str,
                             dialect: str = "duckdb") -> str:
         return f"""Generate a {dialect.upper()} query for this question.
@@ -183,7 +237,10 @@ Schema:
 
 Fix the query. Return only the corrected query, no explanation."""
 
-    def synthesize_response(self, question: str, merged_results: dict, query_trace: dict) -> str:
+    def synthesize_response(self, question: str, merged_results: dict, query_trace: dict,
+                            dataset: str = "") -> str:
+        if dataset == "agnews":
+            return self._synthesize_agnews(question, merged_results)
         # Always include category_aggregation in full; truncate the rest
         cat_agg = merged_results.get("category_aggregation")
         cat_section = ""
@@ -250,6 +307,75 @@ CRITICAL FORMAT RULES (required for automated evaluation):
 - Do not mention internal query details (business_ref, business_id, etc.)
 - business_ref values like 'businessref_52' correspond to MongoDB business_id 'businessid_52' — use the business name from MongoDB results when available
 - If results are empty or contain errors, say so explicitly"""
+
+    def _synthesize_agnews(self, question: str, merged_results: dict) -> str:
+        sqlite_rows = merged_results.get("sqlite", [])
+        mongo_rows = merged_results.get("mongodb", [])
+
+        if isinstance(sqlite_rows, dict):
+            sqlite_rows = sqlite_rows.get("rows", [])
+        if isinstance(mongo_rows, dict):
+            mongo_rows = mongo_rows.get("rows", [])
+
+        meta_index: dict = {}
+        for row in (sqlite_rows if isinstance(sqlite_rows, list) else []):
+            aid = row.get("article_id")
+            if aid is not None:
+                meta_index[int(aid)] = row
+
+        joined = []
+        for art in (mongo_rows if isinstance(mongo_rows, list) else []):
+            aid = art.get("article_id")
+            row = {
+                "article_id": aid,
+                "title": art.get("title", ""),
+                "description": art.get("description", ""),
+            }
+            if aid is not None and int(aid) in meta_index:
+                meta = meta_index[int(aid)]
+                if "region" in meta:
+                    row["region"] = meta["region"]
+                if "publication_date" in meta:
+                    row["year"] = meta["publication_date"][:4]
+            joined.append(row)
+
+        if not joined and mongo_rows:
+            joined = mongo_rows if isinstance(mongo_rows, list) else []
+
+        articles_str = json.dumps(joined, default=str)
+        if len(articles_str) > 50000:
+            trimmed = [
+                {
+                    "article_id": r.get("article_id"),
+                    "title": r.get("title", ""),
+                    "region": r.get("region"),
+                    "year": r.get("year"),
+                }
+                for r in joined
+            ]
+            articles_str = json.dumps(trimmed, default=str)[:50000]
+
+        return f"""You are answering a question about news articles. Article categories are NOT stored
+in the database — you must classify them yourself from the title and description.
+
+The four possible categories are:
+- World: international affairs, politics, government, military, elections, foreign policy
+- Sports: games, players, teams, matches, championships, scores, athletes, leagues
+- Business: companies, earnings, stocks, markets, economy, finance, mergers, CEO, revenue
+- Science/Technology: software, tech companies, research, internet, computers, space, medicine
+
+Question: {question}
+
+Articles (article_id, title, optional description/region/year):
+{articles_str}
+
+Instructions:
+1. Classify each article by reading its title (and description when available).
+2. Compute exactly what the question asks (count, fraction, average, name).
+3. Return ONLY the final answer — a number, fraction, or name. No explanation.
+4. For fractions: return the exact decimal (e.g. 0.14414414414414414, not 14%).
+5. For averages: return the exact value (e.g. 336.6363636363636).
+6. If results are empty or all errored, say so explicitly."""
 
     def text_extraction(self, text: str, goal: str) -> str:
         return f"""Extract structured information from this text.

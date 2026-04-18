@@ -51,6 +51,7 @@ async def main():
         question=args.question,
         available_databases=available_dbs,
         session_id=args.session_id,
+        dataset=args.dataset,
     )
 
     print(f"\nQuestion : {args.question}")
