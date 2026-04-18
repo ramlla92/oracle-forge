@@ -13,6 +13,8 @@ DB_TYPE_TO_TOOL = {
     "postgresql":            "postgres_query",
     "postgresql_bookreview": "bookreview_query",
     "sqlite":                "sqlite_query",
+    "github_repos_metadata":  "github_repos_metadata_query",
+    "github_repos_artifacts": "github_repos_artifacts_query",
 }
 
 _rpc_id = 0

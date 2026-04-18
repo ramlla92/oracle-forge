@@ -70,6 +70,8 @@ class ContextManager:
             "postgresql":            "### PostgreSQL",
             "postgresql_bookreview": "### PostgreSQL",
             "sqlite":                "### SQLite",
+            "github_repos_metadata":  "### GITHUB_REPOS — metadata database",
+            "github_repos_artifacts": "### GITHUB_REPOS — artifacts database",
         }
         heading = heading_map.get(db_type)
         if not heading:
