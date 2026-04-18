@@ -2,7 +2,7 @@
 
 **The Oracle Forge of Data Agent** | TRP1 FDE Programme | Week 8–9 | April 2026
 
-**Live agent (shared server):** `http://<VPS_IP>:8000` — update with actual IP before submission
+**Live agent (shared server):** `https://subjective-heading-powers-hiking.trycloudflare.com` (Cloudflare Tunnel to port 8080)
 
 ---
 
@@ -159,7 +159,8 @@ oracle-forge/
 │   └── README.md
 │
 ├── probes/                      # Adversarial probe library (Intelligence Officers)
-│   └── probes.md                # 15 probes across all 4 DAB failure categories
+│   ├── probes.md                # 20 probes across all 4 DAB failure categories
+│   └── README.md                # Directory orientation
 │
 ├── planning/                    # AI-DLC sprint documents (Drivers)
 │   ├── inception_v1.md          # Sprint 1 Inception — team-approved April 9, 2026
@@ -168,6 +169,11 @@ oracle-forge/
 ├── signal/                      # Signal Corps
 │   ├── engagement_log.md              # Original posts, X threads, resource acquisitions
 │   └── community_participation_log.md # Reddit/Discord/X replies and community comments
+│
+├── results/                     # DAB benchmark submission evidence
+│   ├── dab_submission.json      # DAB-formatted results (all available queries)
+│   ├── PR_SUBMISSION.md         # PR title, body, and submission record
+│   └── README.md                # Directory orientation
 │
 ├── requirements.txt
 └── README.md
@@ -270,6 +276,22 @@ Interactive API docs available at `http://localhost:8080/docs`.
 - Dataset: [UC Berkeley DataAgentBench](https://github.com/ucbepic/DataAgentBench) — 54 queries, 12 datasets, 4 DB types
 - Current SOTA: PromptQL + Gemini at 54.3% pass@1
 - Evaluation: `python eval/run_benchmark.py --dataset yelp --trials 5`
+
+## Benchmark Submission Evidence
+
+**Target repo:** [ucbepic/DataAgentBench](https://github.com/ucbepic/DataAgentBench)  
+**PR title:** `[Team Falcon] - TRP1 FDE Programme, April 2026`  
+**Submission record:** [`results/PR_SUBMISSION.md`](results/PR_SUBMISSION.md)  
+**Results JSON:** [`results/dab_submission.json`](results/dab_submission.json)
+
+| Dataset | Queries | Best pass@1 | Trials |
+|---------|---------|-------------|--------|
+| yelp | 7 | 100% | 5 |
+| bookreview | 3 | 33% | 1 |
+| GITHUB_REPOS | 4 | 0% | 1 |
+| stockmarket | 5 | 0% | 1 |
+
+Agent name: **Oracle Forge** | Backbone LLM: **gemini/gemini-2.0-flash-001** (OpenRouter) | Dataset hints: **Yes** (3-layer KB)
 
 ---
 
@@ -487,7 +509,7 @@ python eval/run_benchmark.py --dataset PANCANCER_ATLAS --trials 1
 
 ## Adversarial Probes
 
-[`probes/probes.md`](probes/probes.md) — 15 probes covering all 4 DAB failure categories:
+[`probes/probes.md`](probes/probes.md) — 20 probes covering all 4 DAB failure categories:
 - Multi-database routing failures
 - Ill-formatted join key mismatches
 - Unstructured text extraction failures
